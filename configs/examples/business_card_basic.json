@@ -1,0 +1,125 @@
+{
+  "project": {
+    "name": "Javier Business Card",
+    "type": "business-card",
+    "version": "0.1.0",
+    "description": "Business card with front logo + pattern and back contact info + QR"
+  },
+  "manufacturing": {
+    "process": "fdm",
+    "nozzle": 0.4,
+    "layerHeight": 0.2,
+    "units": "mm"
+  },
+  "object": {
+    "width": 85.0,
+    "height": 54.0,
+    "thickness": 1.8,
+    "cornerRadius": 4.0
+  },
+  "theme": {
+    "name": "dark-luxury",
+    "baseColor": "black",
+    "textColor": "white",
+    "accentColor": "gold"
+  },
+  "owner": {
+    "name": "Javier Rodriguez",
+    "title": "Frontend Developer / 3D Printing",
+    "phone": "+54 351 123 4567",
+    "email": "javier@example.com",
+    "website": "https://javier.example.com",
+    "github": "https://github.com/monotributistar",
+    "linkedin": "https://linkedin.com/in/javier-rodriguez"
+  },
+  "qr": {
+    "enabled": true,
+    "type": "vcard",
+    "target": "owner",
+    "size": 24,
+    "position": {
+      "face": "back",
+      "x": 56,
+      "y": 15
+    },
+    "relief": {
+      "mode": "emboss",
+      "height": 0.4
+    },
+    "errorCorrection": "M",
+    "quietZone": 2
+  },
+  "faces": {
+    "front": {
+      "features": [
+        {
+          "id": "bg_monogram",
+          "type": "pattern",
+          "patternType": "text-repeat",
+          "text": "JR",
+          "spacing": 7,
+          "rotation": -25,
+          "material": "base",
+          "relief": {
+            "mode": "deboss",
+            "depth": 0.2
+          },
+          "zIndex": 0
+        },
+        {
+          "id": "company_logo",
+          "type": "logo",
+          "file": "assets/logos/logo.svg",
+          "position": { "x": 42.5, "y": 27 },
+          "size": { "width": 24 },
+          "material": "accent",
+          "relief": {
+            "mode": "emboss",
+            "height": 0.5
+          },
+          "zIndex": 1
+        }
+      ]
+    },
+    "back": {
+      "features": [
+        {
+          "id": "contact_info",
+          "type": "text-block",
+          "position": { "x": 8, "y": 12 },
+          "width": 40,
+          "font": "Montserrat",
+          "fontSize": 3.2,
+          "fontStyle": "bold",
+          "align": "left",
+          "lineHeight": 1.4,
+          "lines": [
+            "{{owner.name}}",
+            "{{owner.title}}",
+            "{{owner.email}}",
+            "{{owner.website}}"
+          ],
+          "material": "text",
+          "relief": {
+            "mode": "emboss",
+            "height": 0.4
+          },
+          "zIndex": 1
+        },
+        {
+          "id": "vcard_qr",
+          "type": "qr",
+          "source": "qr",
+          "zIndex": 2
+        }
+      ]
+    }
+  },
+  "exports": {
+    "singleStl": true,
+    "colorSeparatedStl": true,
+    "threeMf": false,
+    "previewSvg": true,
+    "previewPng": true
+  }
+}
