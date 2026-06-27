@@ -157,6 +157,17 @@ def build_summary_stage(ctx: Dict[str, Any]) -> StageResult:
         rel = os.path.relpath(p, str(export_paths.root)) if export_paths else p
         lines.append(f"  - {rel}")
 
+    scad_path = ctx.get("scad_path")
+    if scad_path:
+        rel = os.path.relpath(str(scad_path), str(export_paths.root)) if export_paths else str(scad_path)
+        lines.append(f"  - {rel}")
+
+    stl_path = ctx.get("stl_path")
+    if stl_path:
+        rel = os.path.relpath(str(stl_path), str(export_paths.root)) if export_paths else str(stl_path)
+        size_kb = stl_path.stat().st_size / 1024 if hasattr(stl_path, 'stat') else 0
+        lines.append(f"  - {rel} ({size_kb:.0f} KB)")
+
     if context and context.warnings:
         lines.append("Warnings:")
         for w in context.warnings:
@@ -167,3 +178,47 @@ def build_summary_stage(ctx: Dict[str, Any]) -> StageResult:
     summary = "\n".join(lines)
     ctx["summary"] = summary
     return StageResult.ok(summary)
+
+
+def generate_scad_stage(ctx: Dict[str, Any]) -> StageResult:
+    """Stage: Generate OpenSCAD code from domain model."""
+    card = ctx.get("card")
+    assets = ctx.get("generated_assets")
+    export_paths = ctx.get("export_paths")
+
+    if not card or not export_paths:
+        return StageResult.error("Missing card or export_paths")
+
+    try:
+        from cardforge.scad.generator import generate_scad
+        scad_path = generate_scad(card, assets or GeneratedAssets(), export_paths)
+        ctx["scad_path"] = scad_path
+        return StageResult.ok(f"SCAD generated: {scad_path}")
+    except Exception as e:
+        return StageResult.error(f"SCAD generation failed: {e}")
+
+
+def export_stl_stage(ctx: Dict[str, Any]) -> StageResult:
+    """Stage: Export single STL via OpenSCAD CLI."""
+    scad_path = ctx.get("scad_path")
+    export_paths = ctx.get("export_paths")
+
+    if not scad_path or not export_paths:
+        return StageResult.error("Missing scad_path or export_paths")
+
+    try:
+        from cardforge.export.openscad_cli import find_openscad, run_openscad, OpenSCADNotFoundError
+
+        stl_path = export_paths.stl_dir / "card_single.stl"
+        result = run_openscad(scad_path, stl_path)
+        if result.success:
+            ctx["stl_path"] = stl_path
+            size_kb = stl_path.stat().st_size / 1024 if stl_path.exists() else 0
+            return StageResult.ok(f"STL exported: {stl_path} ({size_kb:.0f} KB)")
+        else:
+            return StageResult.error(f"OpenSCAD failed: {result.stderr}")
+
+    except OpenSCADNotFoundError as e:
+        return StageResult.error(str(e))
+    except Exception as e:
+        return StageResult.error(f"STL export failed: {e}")

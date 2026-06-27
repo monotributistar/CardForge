@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""CardForge build script — end-to-end pipeline from JSON config to preview."""
+"""CardForge build script — end-to-end pipeline from JSON config to preview/SCAD/STL."""
 
 import sys
 from pathlib import Path
 
-# Ensure the project root is on sys.path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
@@ -17,16 +16,19 @@ from cardforge.pipeline.stages import (
     prepare_exports_stage,
     generate_assets_stage,
     render_preview_stage,
+    generate_scad_stage,
+    export_stl_stage,
     build_summary_stage,
 )
 
 
-def build(config_path: str, exports_dir: str = "exports") -> int:
+def build(config_path: str, exports_dir: str = "exports", stl: bool = False) -> int:
     """Run the full CardForge pipeline.
 
     Args:
         config_path: Path to JSON config file.
         exports_dir: Directory for build outputs.
+        stl: If True, also generate SCAD and export STL.
 
     Returns:
         0 on success, 1 on failure.
@@ -39,6 +41,11 @@ def build(config_path: str, exports_dir: str = "exports") -> int:
     pipeline.add_stage("exports", prepare_exports_stage)
     pipeline.add_stage("assets", generate_assets_stage)
     pipeline.add_stage("preview", render_preview_stage)
+
+    if stl:
+        pipeline.add_stage("scad", generate_scad_stage)
+        pipeline.add_stage("stl", export_stl_stage)
+
     pipeline.add_stage("summary", build_summary_stage)
 
     result = pipeline.run({
@@ -58,8 +65,9 @@ def build(config_path: str, exports_dir: str = "exports") -> int:
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python scripts/build.py <config.json>", file=sys.stderr)
+        print("Usage: python scripts/build.py <config.json> [--stl]", file=sys.stderr)
         sys.exit(1)
 
     config_file = sys.argv[1]
-    sys.exit(build(config_file))
+    generate_stl = "--stl" in sys.argv
+    sys.exit(build(config_file, stl=generate_stl))
