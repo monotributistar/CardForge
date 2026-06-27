@@ -38,7 +38,7 @@ class TestScadGenerator:
         assert scad_path.exists()
         content = scad_path.read_text()
         assert "card_base(" in content
-        assert "include <main.scad>" in content
+        assert "main.scad" in content
 
     def test_includes_card_base_params(self, tmp_path):
         export = prepare_export_paths("Test", base_dir=tmp_path)

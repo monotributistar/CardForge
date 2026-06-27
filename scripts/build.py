@@ -18,17 +18,20 @@ from cardforge.pipeline.stages import (
     render_preview_stage,
     generate_scad_stage,
     export_stl_stage,
+    generate_material_scad_stage,
+    export_material_stls_stage,
     build_summary_stage,
 )
 
 
-def build(config_path: str, exports_dir: str = "exports", stl: bool = False) -> int:
+def build(config_path: str, exports_dir: str = "exports", stl: bool = False, parts: bool = False) -> int:
     """Run the full CardForge pipeline.
 
     Args:
         config_path: Path to JSON config file.
         exports_dir: Directory for build outputs.
-        stl: If True, also generate SCAD and export STL.
+        stl: If True, also generate SCAD and single STL.
+        parts: If True, generate per-material SCAD and STL files.
 
     Returns:
         0 on success, 1 on failure.
@@ -45,6 +48,10 @@ def build(config_path: str, exports_dir: str = "exports", stl: bool = False) -> 
     if stl:
         pipeline.add_stage("scad", generate_scad_stage)
         pipeline.add_stage("stl", export_stl_stage)
+
+    if parts:
+        pipeline.add_stage("material_scad", generate_material_scad_stage)
+        pipeline.add_stage("material_stl", export_material_stls_stage)
 
     pipeline.add_stage("summary", build_summary_stage)
 
@@ -65,9 +72,10 @@ def build(config_path: str, exports_dir: str = "exports", stl: bool = False) -> 
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python scripts/build.py <config.json> [--stl]", file=sys.stderr)
+        print("Usage: python scripts/build.py <config.json> [--stl] [--parts]", file=sys.stderr)
         sys.exit(1)
 
     config_file = sys.argv[1]
     generate_stl = "--stl" in sys.argv
-    sys.exit(build(config_file, stl=generate_stl))
+    generate_parts = "--parts" in sys.argv
+    sys.exit(build(config_file, stl=generate_stl, parts=generate_parts))

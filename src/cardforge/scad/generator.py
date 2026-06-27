@@ -48,8 +48,9 @@ def generate_scad(
     writer.comment("Do not edit manually — edit config JSON instead")
     writer.blank_line()
 
-    # Include modules
-    writer.include("main.scad")
+    # Include modules (use absolute path for reliability)
+    main_scad = openscad_dir / "main.scad"
+    writer.include(str(main_scad.resolve()))
     writer.blank_line()
 
     # Card base

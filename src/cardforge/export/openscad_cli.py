@@ -74,6 +74,7 @@ def run_openscad(
     output_stl: Path,
     openscad_bin: Optional[str] = None,
     timeout: int = 120,
+    include_dirs: Optional[list[Path]] = None,
 ) -> OpenSCADResult:
     """Run OpenSCAD to render a .scad file to STL.
 
@@ -82,6 +83,7 @@ def run_openscad(
         output_stl: Path for the output .stl file.
         openscad_bin: Optional path to OpenSCAD executable.
         timeout: Maximum time in seconds.
+        include_dirs: Optional list of directories to add to OpenSCAD include path.
 
     Returns:
         OpenSCADResult with success status and output.
@@ -94,12 +96,21 @@ def run_openscad(
 
     output_stl.parent.mkdir(parents=True, exist_ok=True)
 
-    cmd = [
-        openscad_bin,
+    cmd = [openscad_bin]
+    cmd.extend([
         "-o", str(output_stl),
         "--export-format", "binstl",
         str(input_scad),
-    ]
+    ])
+
+    # OpenSCAD < 2024 doesn't support -I; use OPENSCADPATH env var as fallback
+    env = os.environ.copy()
+    if include_dirs:
+        paths = [str(d) for d in include_dirs]
+        existing = env.get("OPENSCADPATH", "")
+        if existing:
+            paths.append(existing)
+        env["OPENSCADPATH"] = os.pathsep.join(paths)
 
     try:
         proc = subprocess.run(
@@ -107,6 +118,7 @@ def run_openscad(
             capture_output=True,
             text=True,
             timeout=timeout,
+            env=env,
         )
         result = OpenSCADResult(
             success=proc.returncode == 0 and output_stl.exists(),

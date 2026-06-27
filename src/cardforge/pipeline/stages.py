@@ -168,6 +168,12 @@ def build_summary_stage(ctx: Dict[str, Any]) -> StageResult:
         size_kb = stl_path.stat().st_size / 1024 if hasattr(stl_path, 'stat') else 0
         lines.append(f"  - {rel} ({size_kb:.0f} KB)")
 
+    material_stl_paths = ctx.get("material_stl_paths", [])
+    for mp in material_stl_paths:
+        rel = os.path.relpath(str(mp), str(export_paths.root)) if export_paths else str(mp)
+        size_kb = mp.stat().st_size / 1024 if hasattr(mp, 'stat') else 0
+        lines.append(f"  - {rel} ({size_kb:.0f} KB)")
+
     if context and context.warnings:
         lines.append("Warnings:")
         for w in context.warnings:
@@ -208,9 +214,11 @@ def export_stl_stage(ctx: Dict[str, Any]) -> StageResult:
 
     try:
         from cardforge.export.openscad_cli import find_openscad, run_openscad, OpenSCADNotFoundError
+        from pathlib import Path
 
         stl_path = export_paths.stl_dir / "card_single.stl"
-        result = run_openscad(scad_path, stl_path)
+        openscad_dir = Path(__file__).resolve().parent.parent.parent.parent / "openscad"
+        result = run_openscad(scad_path, stl_path, include_dirs=[openscad_dir])
         if result.success:
             ctx["stl_path"] = stl_path
             size_kb = stl_path.stat().st_size / 1024 if stl_path.exists() else 0
@@ -222,3 +230,48 @@ def export_stl_stage(ctx: Dict[str, Any]) -> StageResult:
         return StageResult.error(str(e))
     except Exception as e:
         return StageResult.error(f"STL export failed: {e}")
+
+
+def generate_material_scad_stage(ctx: Dict[str, Any]) -> StageResult:
+    """Stage: Generate per-material SCAD files."""
+    card = ctx.get("card")
+    assets = ctx.get("generated_assets")
+    export_paths = ctx.get("export_paths")
+
+    if not card or not export_paths:
+        return StageResult.error("Missing card or export_paths")
+
+    try:
+        from cardforge.scad.material_groups import group_features_by_material
+        from cardforge.scad.material_generator import generate_material_scad_files
+
+        groups = group_features_by_material(card)
+        mat_scad_paths = generate_material_scad_files(card, groups, assets or GeneratedAssets(), export_paths)
+        ctx["material_scad_paths"] = mat_scad_paths
+        ctx["material_groups"] = groups
+        return StageResult.ok(f"Material SCADs generated: {len(mat_scad_paths)} files")
+    except Exception as e:
+        return StageResult.error(f"Material SCAD generation failed: {e}")
+
+
+def export_material_stls_stage(ctx: Dict[str, Any]) -> StageResult:
+    """Stage: Export per-material STL files."""
+    card = ctx.get("card")
+    mat_scad_paths = ctx.get("material_scad_paths")
+    export_paths = ctx.get("export_paths")
+
+    if not mat_scad_paths or not export_paths:
+        return StageResult.error("Missing material_scad_paths or export_paths")
+
+    try:
+        from cardforge.export.stl_parts import export_material_stls, OpenSCADNotFoundError
+        from pathlib import Path
+
+        openscad_dir = Path(__file__).resolve().parent.parent.parent.parent / "openscad"
+        stl_paths = export_material_stls(card, mat_scad_paths, export_paths, include_dirs=[openscad_dir])
+        ctx["material_stl_paths"] = stl_paths
+        return StageResult.ok(f"Material STLs exported: {len(stl_paths)} files")
+    except OpenSCADNotFoundError as e:
+        return StageResult.error(str(e))
+    except Exception as e:
+        return StageResult.error(f"Material STL export failed: {e}")
