@@ -106,22 +106,34 @@ def generate_assets_stage(ctx: Dict[str, Any]) -> StageResult:
 
 
 def render_preview_stage(ctx: Dict[str, Any]) -> StageResult:
-    """Stage: Render SVG previews for each face."""
+    """Stage: Render SVG previews from Geometry IR via SVGVisitor."""
+    document = ctx.get("geometry_document")
     card = ctx.get("card")
-    assets = ctx.get("generated_assets")
     export_paths = ctx.get("export_paths")
 
-    if not card or not export_paths:
-        return StageResult.error("Missing card or export_paths")
-
-    theme = Theme.from_materials(card.materials)
-    previews = []
+    if not document or not export_paths:
+        return StageResult.error("Missing geometry_document or export_paths")
 
     try:
-        for face_id in card.faces:
+        from cardforge.geometry_ir.svg_visitor import SVGVisitor
+
+        previews = []
+        faces = card.faces.keys() if card else ["front", "back"]
+
+        for face_id in faces:
+            visitor = SVGVisitor(face_id=face_id)
+            svg_code = visitor.render(document)
             out = export_paths.preview_dir / f"{face_id}.svg"
-            render_face_preview_svg(card, face_id, assets or GeneratedAssets(), out, theme)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(svg_code)
             previews.append(str(out))
+
+        # Also render without face filter for full preview
+        if len(faces) > 1:
+            visitor = SVGVisitor()
+            svg_code = visitor.render(document)
+            out = export_paths.preview_dir / "full.svg"
+            out.write_text(svg_code)
 
         ctx["preview_paths"] = previews
         return StageResult.ok(f"Rendered {len(previews)} preview(s)")

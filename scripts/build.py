@@ -56,12 +56,14 @@ def build(
     pipeline.add_stage("domain", create_domain_stage)
     pipeline.add_stage("exports", prepare_exports_stage)
     pipeline.add_stage("assets", generate_assets_stage)
-    pipeline.add_stage("preview", render_preview_stage)
 
-    # Build Geometry IR (always, needed for manufacturing analysis)
+    # Build Geometry IR (needed for preview + manufacturing)
     pipeline.add_stage("geometry_ir", build_geometry_ir_stage)
 
-    # Manufacturing analysis always runs
+    # Preview from Geometry IR
+    pipeline.add_stage("preview", render_preview_stage)
+
+    # Manufacturing analysis
     pipeline.add_stage("manufacturing", manufacturing_analysis_stage)
 
     if not report_only:
