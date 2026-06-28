@@ -32,3 +32,4 @@ node_modules/
 apps/*/dist/
 packages/*/dist/
 exports/_test_config.json
+manifest-*.json
