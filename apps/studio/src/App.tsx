@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import React from 'react'
+import { StudioProvider } from './state/studioStore'
 import TopBar from './components/TopBar'
 import LeftPanel from './components/LeftPanel'
 import Canvas from './components/Canvas'
@@ -30,33 +31,33 @@ const STUDIO_STYLE: Record<string, React.CSSProperties> = {
     overflow: 'auto', padding: 12,
   },
   bottomPanel: {
-    height: 100, background: '#161b22', borderTop: '1px solid #30363d',
+    minHeight: 80, background: '#161b22', borderTop: '1px solid #30363d',
     display: 'flex', alignItems: 'center', padding: '0 16px',
   },
 }
 
 export default function App() {
-  const [project, setProject] = useState('card-minimal')
-
   return (
-    <div style={STUDIO_STYLE.container}>
-      <div style={STUDIO_STYLE.topBar}>
-        <TopBar project={project} onBuild={() => {}} />
-      </div>
-      <div style={STUDIO_STYLE.main}>
-        <div style={STUDIO_STYLE.leftPanel}>
-          <LeftPanel />
+    <StudioProvider>
+      <div style={STUDIO_STYLE.container}>
+        <div style={STUDIO_STYLE.topBar}>
+          <TopBar />
         </div>
-        <div style={STUDIO_STYLE.canvas}>
-          <Canvas project={project} />
+        <div style={STUDIO_STYLE.main}>
+          <div style={STUDIO_STYLE.leftPanel}>
+            <LeftPanel />
+          </div>
+          <div style={STUDIO_STYLE.canvas}>
+            <Canvas />
+          </div>
+          <div style={STUDIO_STYLE.rightPanel}>
+            <RightPanel />
+          </div>
         </div>
-        <div style={STUDIO_STYLE.rightPanel}>
-          <RightPanel />
+        <div style={STUDIO_STYLE.bottomPanel}>
+          <BottomPanel />
         </div>
       </div>
-      <div style={STUDIO_STYLE.bottomPanel}>
-        <BottomPanel />
-      </div>
-    </div>
+    </StudioProvider>
   )
 }
