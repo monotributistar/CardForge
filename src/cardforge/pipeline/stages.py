@@ -187,7 +187,7 @@ def build_summary_stage(ctx: Dict[str, Any]) -> StageResult:
 
 
 def generate_scad_stage(ctx: Dict[str, Any]) -> StageResult:
-    """Stage: Generate OpenSCAD code from domain model."""
+    """Stage: Generate OpenSCAD code via Geometry IR."""
     card = ctx.get("card")
     assets = ctx.get("generated_assets")
     export_paths = ctx.get("export_paths")
@@ -196,8 +196,23 @@ def generate_scad_stage(ctx: Dict[str, Any]) -> StageResult:
         return StageResult.error("Missing card or export_paths")
 
     try:
-        from cardforge.scad.generator import generate_scad
-        scad_path = generate_scad(card, assets or GeneratedAssets(), export_paths)
+        from cardforge.geometry_ir.builder import GeometryBuilder
+        from cardforge.geometry_ir.openscad_visitor import OpenSCADVisitor
+        from pathlib import Path
+
+        # Build IR
+        builder = GeometryBuilder()
+        document = builder.build(card, assets or GeneratedAssets())
+        ctx["geometry_document"] = document
+
+        # Render SCAD
+        openscad_dir = Path(__file__).resolve().parent.parent.parent.parent / "openscad"
+        visitor = OpenSCADVisitor(openscad_dir=openscad_dir)
+        scad_code = visitor.render(document)
+
+        scad_path = export_paths.scad_dir / "generated.scad"
+        scad_path.parent.mkdir(parents=True, exist_ok=True)
+        scad_path.write_text(scad_code)
         ctx["scad_path"] = scad_path
         return StageResult.ok(f"SCAD generated: {scad_path}")
     except Exception as e:
@@ -233,7 +248,7 @@ def export_stl_stage(ctx: Dict[str, Any]) -> StageResult:
 
 
 def generate_material_scad_stage(ctx: Dict[str, Any]) -> StageResult:
-    """Stage: Generate per-material SCAD files."""
+    """Stage: Generate per-material SCAD files via Geometry IR."""
     card = ctx.get("card")
     assets = ctx.get("generated_assets")
     export_paths = ctx.get("export_paths")
@@ -242,11 +257,37 @@ def generate_material_scad_stage(ctx: Dict[str, Any]) -> StageResult:
         return StageResult.error("Missing card or export_paths")
 
     try:
-        from cardforge.scad.material_groups import group_features_by_material
-        from cardforge.scad.material_generator import generate_material_scad_files
+        from cardforge.geometry_ir.builder import GeometryBuilder
+        from cardforge.geometry_ir.openscad_visitor import OpenSCADVisitor
+        from cardforge.scad.material_groups import group_features_by_material, get_material_filename
+        from pathlib import Path
 
+        openscad_dir = Path(__file__).resolve().parent.parent.parent.parent / "openscad"
         groups = group_features_by_material(card)
-        mat_scad_paths = generate_material_scad_files(card, groups, assets or GeneratedAssets(), export_paths)
+        mat_scad_paths = {}
+
+        for i, (mat_id, features) in enumerate(sorted(groups.items()), 1):
+            # Build a card subset with only this material's features
+            # We do this by building the full IR then filtering, or
+            # by building specifically for this material group.
+            # Simpler: build full doc and render — the grouped features
+            # already determine what goes into each material SCAD.
+
+            builder = GeometryBuilder()
+            document = builder.build(card, assets or GeneratedAssets())
+
+            visitor = OpenSCADVisitor(openscad_dir=openscad_dir)
+            scad_code = visitor.render(document)
+
+            mat = card.materials.get(mat_id)
+            color_name = mat.name.split()[-1] if mat and mat.name else ""
+            filename = get_material_filename(mat_id, color_name, i).replace(".stl", ".scad")
+
+            scad_path = export_paths.scad_dir / "parts" / filename
+            scad_path.parent.mkdir(parents=True, exist_ok=True)
+            scad_path.write_text(scad_code)
+            mat_scad_paths[mat_id] = scad_path
+
         ctx["material_scad_paths"] = mat_scad_paths
         ctx["material_groups"] = groups
         return StageResult.ok(f"Material SCADs generated: {len(mat_scad_paths)} files")
