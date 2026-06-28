@@ -227,6 +227,11 @@ export default function App() {
               const f = findFeature(doc, id)
               if (f) (f as any).lines = lines
             })}
+            onUpdateFont={(id, font) => edit(() => {
+              if (!doc) return
+              const f = findFeature(doc, id)
+              if (f) (f as any).font = font
+            })}
             onUpdateFontSize={(id, size) => edit(() => {
               if (!doc) return
               const f = findFeature(doc, id)
@@ -268,20 +273,9 @@ export default function App() {
       {/* Publish Dialog */}
       <PublishDialog
         result={publishResult}
+        documentJson={doc ? JSON.stringify(doc, null, 2) : null}
+        documentId={doc?.document?.id ?? 'document'}
         onClose={() => setPublishResult(null)}
-        onConfirm={() => {
-          if (publishResult) {
-            const manifestJson = JSON.stringify(publishResult.manifest, null, 2)
-            const blob = new Blob([manifestJson], { type: 'application/json' })
-            const url = URL.createObjectURL(blob)
-            const a = document.createElement('a')
-            a.href = url
-            a.download = `manifest-${publishResult.documentId}.json`
-            a.click()
-            URL.revokeObjectURL(url)
-            setPublishResult(null)
-          }
-        }}
       />
     </div>
   )

@@ -8,6 +8,7 @@
 // It does NOT replace the Core compiler — just enables live preview.
 
 import type { CardForgeDocument, ManufacturingReport, Feature } from '../../types/cardforge'
+import { renderQRSVG } from './QRGenerator'
 
 // ── SVG Generation ──────────────────────────────────────────────────────
 
@@ -15,8 +16,12 @@ function resolveText(template: string, vars: Record<string, string>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? `{{${key}}}`)
 }
 
+const PX_PER_MM = 4
+
 function svgHeader(w: number, h: number): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}mm" height="${h}mm" viewBox="0 0 ${w} ${h}">`
+  const pw = w * PX_PER_MM
+  const ph = h * PX_PER_MM
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${pw}" height="${ph}" viewBox="0 0 ${pw} ${ph}">`
 }
 
 function svgFooter(): string { return '</svg>' }
@@ -27,9 +32,9 @@ function compileFaceSVG(doc: CardForgeDocument, faceId: string): string {
   const face = obj.faces[faceId]
   if (!face) return ''
 
-  const w = obj.width
-  const h = obj.height
-  const r = obj.cornerRadius ?? 4
+  const w = obj.width * PX_PER_MM
+  const h = obj.height * PX_PER_MM
+  const r = (obj.cornerRadius ?? 4) * PX_PER_MM
   const baseColor = obj.theme?.baseColor ?? '#1a1a1a'
   const textColor = obj.theme?.textColor ?? '#ffffff'
   const accentColor = obj.theme?.accentColor ?? '#ffd700'
@@ -40,28 +45,28 @@ function compileFaceSVG(doc: CardForgeDocument, faceId: string): string {
   parts.push(`<rect x="0" y="0" width="${w}" height="${h}" rx="${r}" fill="${baseColor}"/>`)
 
   for (const feat of face.features) {
-    const x = feat.position?.x ?? 0
-    const y = feat.position?.y ?? 0
+    const x = (feat.position?.x ?? 0) * PX_PER_MM
+    const y = (feat.position?.y ?? 0) * PX_PER_MM
     const color = feat.material === 'accent' ? accentColor : textColor
 
     if (feat.type === 'text-block' && feat.lines) {
-      const fs = feat.fontSize ?? 3.0
+      const fs = (feat.fontSize ?? 3.0) * PX_PER_MM
       const lh = 1.4
       for (let i = 0; i < feat.lines.length; i++) {
         const text = resolveText(feat.lines[i], vars)
         const ly = y + (i + 1) * fs * lh
         const anchor = feat.align === 'center' ? 'middle' : feat.align === 'right' ? 'end' : 'start'
-        const ax = feat.align === 'center' ? x + ((feat as any).size?.width ?? w) / 2 : x
+        const ax = feat.align === 'center' ? x + (((feat as any).size?.width ?? obj.width) * PX_PER_MM) / 2 : x
         parts.push(`<text x="${ax}" y="${ly}" font-family="${feat.font ?? 'sans-serif'}" font-size="${fs}" font-weight="${feat.fontStyle ?? 'normal'}" fill="${color}" text-anchor="${anchor}">${text}</text>`)
       }
     } else if (feat.type === 'qr') {
       const qrValue = resolveText(feat.value ?? '', vars)
-      const qrSize = typeof feat.size === 'number' ? feat.size : (feat.size as any)?.width ?? 24
-      parts.push(`<rect x="${x}" y="${y}" width="${qrSize}" height="${qrSize}" fill="${color}" rx="2"/>`)
-      parts.push(`<text x="${x + qrSize/2}" y="${y + qrSize/2 + 3}" font-size="6" fill="${baseColor}" text-anchor="middle">QR</text>`)
+      const qrSizeMM = typeof feat.size === 'number' ? feat.size : (feat.size as any)?.width ?? 24
+      const qrSvg = renderQRSVG(qrValue || 'cardforge', qrSizeMM, 2, PX_PER_MM)
+      parts.push(`<g transform="translate(${x},${y})">${qrSvg}</g>`)
     } else if (feat.type === 'pattern') {
-      parts.push(`<rect x="0" y="0" width="${w}" height="${h}" fill="none" stroke="${textColor}" stroke-width="0.5" opacity="0.15"/>`)
-      parts.push(`<text x="${w/2}" y="${h/2}" font-size="24" fill="${textColor}" opacity="0.1" text-anchor="middle" transform="rotate(-25,${w/2},${h/2})">${feat.text ?? ''}</text>`)
+      parts.push(`<rect x="0" y="0" width="${w}" height="${h}" fill="none" stroke="${textColor}" stroke-width="${0.5 * PX_PER_MM}" opacity="0.15"/>`)
+      parts.push(`<text x="${w/2}" y="${h/2}" font-size="${24 * PX_PER_MM}" fill="${textColor}" opacity="0.1" text-anchor="middle" transform="rotate(-25,${w/2},${h/2})">${feat.text ?? ''}</text>`)
     }
   }
   parts.push(svgFooter())

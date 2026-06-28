@@ -36,7 +36,7 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
 
   const svgContent = activeFace === 'front' ? frontSvg : backSvg
   const hasBoth = frontSvg && backSvg
-  const cardW = document?.objects?.[0]?.width ?? 85
+  const cardW = document?.objects?.[0]?.width ?? 85    // mm
   const cardH = document?.objects?.[0]?.height ?? 54
   const vp: CanvasViewport = { zoom, offsetX, offsetY }
 
@@ -127,8 +127,10 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
         {svgContent && (
           <div style={{
             position: 'absolute',
-            left: `${(containerSize.w - cardW * zoom) / 2 + offsetX}px`,
-            top: `${(containerSize.h - cardH * zoom) / 2 + offsetY}px`,
+            left: `${(containerSize.w - cardW * 4 * zoom) / 2 + offsetX}px`,
+            top: `${(containerSize.h - cardH * 4 * zoom) / 2 + offsetY}px`,
+            width: `${cardW * 4}px`,
+            height: `${cardH * 4}px`,
             transform: `scale(${zoom})`, transformOrigin: 'top left',
             pointerEvents: 'none',
           }} dangerouslySetInnerHTML={{ __html: svgContent }} />

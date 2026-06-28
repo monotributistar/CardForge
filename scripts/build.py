@@ -131,7 +131,18 @@ if __name__ == "__main__":
             profile = args[idx + 1]
 
     # Detect document format
-    from cardforge.document.loader import is_document_file
+    from cardforge.document.loader import is_document_file, is_manifest_file
+
+    if is_manifest_file(config_file):
+        print(f"Error: '{config_file}' is a publish manifest, not a CardForge document.", file=sys.stderr)
+        print("", file=sys.stderr)
+        print("A manifest is the output summary. You need the source .cardforge.json file.", file=sys.stderr)
+        print("", file=sys.stderr)
+        print("To generate STL files, use:", file=sys.stderr)
+        print(f"  1. Create a document with:  pnpm studio:dev", file=sys.stderr)
+        print(f"  2. Or use an existing one:   examples/javier.cardforge.json", file=sys.stderr)
+        print(f"  3. Then build it:            uv run python scripts/build.py <file>.cardforge.json --prototype", file=sys.stderr)
+        sys.exit(1)
 
     if prototype or is_document_file(config_file):
         from cardforge.document.prototype import prototype_build, watch_loop

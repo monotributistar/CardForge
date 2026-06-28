@@ -32,9 +32,18 @@ def load_document(path: str) -> CardForgeDocument:
 
 
 def is_document_file(path: str) -> bool:
-    """Detect if a file is a .cardforge.json document (has 'objects' key)."""
+    """Detect if a file is a .cardforge.json document (has 'objects' key with a 'document' object)."""
     try:
         data = json.loads(Path(path).read_text())
-        return "objects" in data and "document" in data
+        return "objects" in data and isinstance(data.get("document"), dict)
+    except Exception:
+        return False
+
+
+def is_manifest_file(path: str) -> bool:
+    """Detect if a file is a publish manifest (has 'score' and 'files' keys)."""
+    try:
+        data = json.loads(Path(path).read_text())
+        return "score" in data and "files" in data and "document" in data
     except Exception:
         return False

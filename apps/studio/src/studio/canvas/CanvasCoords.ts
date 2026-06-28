@@ -16,14 +16,14 @@ export function documentToScreen(
   viewport: CanvasViewport,
   containerWidth: number, containerHeight: number,
 ): { x: number; y: number } {
-  // Card is centered in the viewport, then zoom applied
-  const scaledW = cardWidth * viewport.zoom
-  const scaledH = cardHeight * viewport.zoom
+  const PX = 4 // must match CompileService PX_PER_MM
+  const scaledW = cardWidth * PX * viewport.zoom
+  const scaledH = cardHeight * PX * viewport.zoom
   const cx = (containerWidth - scaledW) / 2 + viewport.offsetX
   const cy = (containerHeight - scaledH) / 2 + viewport.offsetY
   return {
-    x: cx + docX * viewport.zoom,
-    y: cy + docY * viewport.zoom,
+    x: cx + docX * PX * viewport.zoom,
+    y: cy + docY * PX * viewport.zoom,
   }
 }
 
@@ -34,13 +34,14 @@ export function screenToDocument(
   viewport: CanvasViewport,
   containerWidth: number, containerHeight: number,
 ): { x: number; y: number } {
-  const scaledW = cardWidth * viewport.zoom
-  const scaledH = cardHeight * viewport.zoom
+  const PX = 4
+  const scaledW = cardWidth * PX * viewport.zoom
+  const scaledH = cardHeight * PX * viewport.zoom
   const cx = (containerWidth - scaledW) / 2 + viewport.offsetX
   const cy = (containerHeight - scaledH) / 2 + viewport.offsetY
   return {
-    x: Math.max(0, Math.min(cardWidth, (screenX - cx) / viewport.zoom)),
-    y: Math.max(0, Math.min(cardHeight, (screenY - cy) / viewport.zoom)),
+    x: Math.max(0, Math.min(cardWidth, (screenX - cx) / (PX * viewport.zoom))),
+    y: Math.max(0, Math.min(cardHeight, (screenY - cy) / (PX * viewport.zoom))),
   }
 }
 

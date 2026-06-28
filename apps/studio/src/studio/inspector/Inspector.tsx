@@ -6,6 +6,7 @@ interface InspectorProps {
   selectedFeature: Feature | null
   document: CardForgeDocument | null
   onUpdateText: (featureId: string, lines: string[]) => void
+  onUpdateFont: (featureId: string, font: string) => void
   onUpdateFontSize: (featureId: string, size: number) => void
   onUpdateRelief: (featureId: string, height: number) => void
   onUpdateMaterial: (featureId: string, mat: string) => void
@@ -77,6 +78,14 @@ export const Inspector: React.FC<InspectorProps> = (props) => {
             onChange={e => props.onUpdatePosY(f.id, parseFloat(e.target.value) || 0)} /></Row>
         </Section>
         <Section t="✨ Appearance">
+          <Row l="Font">
+            <select style={{ ...S.select, width: 110 }} value={f.font ?? 'Montserrat'}
+              onChange={e => props.onUpdateFont(f.id, e.target.value)}>
+              {['Arial', 'Helvetica', 'Montserrat', 'Roboto', 'Courier New', 'Inter', 'Georgia', 'Times New Roman'].map(fn => (
+                <option key={fn} value={fn}>{fn}</option>
+              ))}
+            </select>
+          </Row>
           <Row l="Font Size">
             <input type="number" style={S.input} step={0.1} min={2} max={8}
               value={f.fontSize ?? 3}
