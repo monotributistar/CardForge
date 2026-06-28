@@ -99,35 +99,52 @@ def build(
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python scripts/build.py <config.json> [options]", file=sys.stderr)
+        print("Usage: python scripts/build.py <file> [options]", file=sys.stderr)
         print("Options:", file=sys.stderr)
         print("  --stl                    Generate single STL", file=sys.stderr)
         print("  --parts                  Generate per-material STLs", file=sys.stderr)
-        print("  --profile <name>         Manufacturing profile (fdm-standard, fdm-fine, sla)", file=sys.stderr)
+        print("  --prototype              Full prototype build (stl+parts+report+readme)", file=sys.stderr)
+        print("  --profile <name>         Manufacturing profile", file=sys.stderr)
         print("  --ignore-manufacturing-errors  Continue even with manufacturing errors", file=sys.stderr)
         print("  --report-only            Only generate report, no STL", file=sys.stderr)
+        print("  --clean                  Clean previous exports before building", file=sys.stderr)
+        print("  --open-preview           Open preview after build", file=sys.stderr)
+        print("  --watch                  Watch file and rebuild on changes", file=sys.stderr)
         sys.exit(1)
 
     config_file = sys.argv[1]
     args = sys.argv[2:]
 
-    generate_stl = "--stl" in args
-    generate_parts = "--parts" in args
+    prototype = "--prototype" in args
+    generate_stl = "--stl" in args or prototype
+    generate_parts = "--parts" in args or prototype
     report_only = "--report-only" in args
     ignore_errors = "--ignore-manufacturing-errors" in args
+    clean = "--clean" in args
+    open_preview = "--open-preview" in args
+    watch = "--watch" in args
 
-    # Extract profile value
     profile = "fdm-standard"
     if "--profile" in args:
         idx = args.index("--profile")
         if idx + 1 < len(args):
             profile = args[idx + 1]
 
-    sys.exit(build(
-        config_file,
-        stl=generate_stl,
-        parts=generate_parts,
-        profile=profile,
-        ignore_errors=ignore_errors,
-        report_only=report_only,
-    ))
+    # Detect document format
+    from cardforge.document.loader import is_document_file
+
+    if prototype or is_document_file(config_file):
+        from cardforge.document.prototype import prototype_build, watch_loop
+        if watch:
+            watch_loop(config_file, clean=clean, open_preview=open_preview)
+        else:
+            sys.exit(prototype_build(config_file, clean=clean, open_preview=open_preview))
+    else:
+        sys.exit(build(
+            config_file,
+            stl=generate_stl,
+            parts=generate_parts,
+            profile=profile,
+            ignore_errors=ignore_errors,
+            report_only=report_only,
+        ))
