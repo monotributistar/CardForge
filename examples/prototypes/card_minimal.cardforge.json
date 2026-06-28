@@ -1,0 +1,108 @@
+{
+  "document": {
+    "id": "card-minimal",
+    "name": "CardForge Minimal",
+    "version": "0.1.0",
+    "description": "Clean, minimal business card. Few elements, highly legible."
+  },
+  "manufacturing": {
+    "profile": "fdm-standard",
+    "process": "fdm",
+    "nozzle": 0.4,
+    "layerHeight": 0.2,
+    "material": "PLA"
+  },
+  "variables": {
+    "name": "Javier Rodriguez",
+    "title": "Frontend Developer",
+    "email": "javier@example.com",
+    "website": "https://javier.example.com"
+  },
+  "objects": [
+    {
+      "id": "main-card",
+      "type": "business-card",
+      "width": 85,
+      "height": 54,
+      "thickness": 1.8,
+      "cornerRadius": 4,
+      "theme": {
+        "name": "monochrome",
+        "baseColor": "white",
+        "textColor": "black",
+        "accentColor": "black"
+      },
+      "faces": {
+        "front": {
+          "features": [
+            {
+              "id": "front-name",
+              "type": "text-block",
+              "position": { "x": 42.5, "y": 20, "anchor": "center" },
+              "width": 70,
+              "font": "Montserrat",
+              "fontSize": 4.0,
+              "fontStyle": "bold",
+              "align": "center",
+              "lines": ["{{name}}"],
+              "relief": { "mode": "emboss", "height": 0.4 },
+              "material": "text"
+            },
+            {
+              "id": "front-title",
+              "type": "text-block",
+              "position": { "x": 42.5, "y": 28, "anchor": "center" },
+              "width": 70,
+              "font": "Montserrat",
+              "fontSize": 3.0,
+              "fontStyle": "regular",
+              "align": "center",
+              "lines": ["{{title}}"],
+              "relief": { "mode": "emboss", "height": 0.4 },
+              "material": "text"
+            }
+          ]
+        },
+        "back": {
+          "features": [
+            {
+              "id": "contact",
+              "type": "text-block",
+              "position": { "x": 8, "y": 12 },
+              "width": 40,
+              "font": "Montserrat",
+              "fontSize": 3.2,
+              "fontStyle": "semibold",
+              "align": "left",
+              "lineHeight": 1.4,
+              "lines": [
+                "{{name}}",
+                "{{title}}",
+                "{{email}}",
+                "{{website}}"
+              ],
+              "relief": { "mode": "emboss", "height": 0.4 },
+              "material": "text"
+            },
+            {
+              "id": "qr",
+              "type": "qr",
+              "value": "{{website}}",
+              "position": { "x": 56, "y": 15 },
+              "size": 24,
+              "relief": { "mode": "emboss", "height": 0.4 },
+              "material": "text"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "exports": {
+    "preview": true,
+    "manufacturingReport": true,
+    "singleStl": true,
+    "colorSeparatedStl": true,
+    "threeMf": false
+  }
+}

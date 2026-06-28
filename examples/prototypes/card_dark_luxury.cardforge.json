@@ -1,0 +1,120 @@
+{
+  "document": {
+    "id": "card-dark-luxury",
+    "name": "CardForge Dark Luxury",
+    "version": "0.1.0",
+    "description": "Premium dark card with gold accent and subtle pattern."
+  },
+  "manufacturing": {
+    "profile": "fdm-standard",
+    "process": "fdm",
+    "nozzle": 0.4,
+    "layerHeight": 0.2,
+    "material": "PLA"
+  },
+  "variables": {
+    "name": "Javier Rodriguez",
+    "title": "Frontend Developer / 3D Printing",
+    "email": "javier@example.com",
+    "website": "https://javier.example.com",
+    "phone": "+54 351 123 4567"
+  },
+  "assets": {
+    "logo": "assets/logos/logo.svg"
+  },
+  "objects": [
+    {
+      "id": "main-card",
+      "type": "business-card",
+      "width": 85,
+      "height": 54,
+      "thickness": 1.8,
+      "cornerRadius": 4,
+      "theme": {
+        "name": "dark-luxury",
+        "baseColor": "black",
+        "textColor": "white",
+        "accentColor": "gold"
+      },
+      "faces": {
+        "front": {
+          "features": [
+            {
+              "id": "front-pattern",
+              "type": "pattern",
+              "patternType": "text-repeat",
+              "text": "JR",
+              "spacing": 8,
+              "rotation": -25,
+              "fontSize": 4,
+              "relief": { "mode": "deboss", "depth": 0.2 },
+              "material": "base",
+              "zIndex": 0
+            },
+            {
+              "id": "logo",
+              "type": "logo",
+              "file": "{{assets.logo}}",
+              "position": { "x": 42.5, "y": 27, "anchor": "center" },
+              "size": { "width": 24, "height": 12 },
+              "relief": { "mode": "emboss", "height": 0.5 },
+              "material": "accent",
+              "zIndex": 1
+            }
+          ]
+        },
+        "back": {
+          "features": [
+            {
+              "id": "contact",
+              "type": "text-block",
+              "position": { "x": 8, "y": 12 },
+              "width": 40,
+              "font": "Montserrat",
+              "fontSize": 3.2,
+              "fontStyle": "bold",
+              "align": "left",
+              "lineHeight": 1.4,
+              "lines": [
+                "{{name}}",
+                "{{title}}",
+                "{{email}}",
+                "{{website}}"
+              ],
+              "relief": { "mode": "emboss", "height": 0.4 },
+              "material": "text",
+              "zIndex": 1
+            },
+            {
+              "id": "qr",
+              "type": "qr",
+              "value": "{{website}}",
+              "position": { "x": 56, "y": 15 },
+              "size": 24,
+              "relief": { "mode": "emboss", "height": 0.4 },
+              "material": "text",
+              "zIndex": 2
+            },
+            {
+              "id": "frame",
+              "type": "frame",
+              "frameStyle": "border",
+              "width": 2,
+              "inset": 1,
+              "relief": { "mode": "emboss", "height": 0.3 },
+              "material": "accent",
+              "zIndex": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "exports": {
+    "preview": true,
+    "manufacturingReport": true,
+    "singleStl": true,
+    "colorSeparatedStl": true,
+    "threeMf": false
+  }
+}

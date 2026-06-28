@@ -1,0 +1,137 @@
+{
+  "document": {
+    "id": "card-tech-pattern",
+    "name": "CardForge Tech Pattern",
+    "version": "0.1.0",
+    "description": "Tech-style card with PCB-like pattern and bold monogram."
+  },
+  "manufacturing": {
+    "profile": "fdm-standard",
+    "process": "fdm",
+    "nozzle": 0.4,
+    "layerHeight": 0.2,
+    "material": "PLA"
+  },
+  "variables": {
+    "name": "Javier Rodriguez",
+    "title": "Frontend Developer / 3D Printing",
+    "email": "javier@example.com",
+    "website": "https://javier.example.com",
+    "github": "github.com/monotributistar"
+  },
+  "objects": [
+    {
+      "id": "main-card",
+      "type": "business-card",
+      "width": 85,
+      "height": 54,
+      "thickness": 1.8,
+      "cornerRadius": 4,
+      "theme": {
+        "name": "tech-pattern",
+        "baseColor": "#0a0a0a",
+        "textColor": "#00ff88",
+        "accentColor": "#00ff88"
+      },
+      "faces": {
+        "front": {
+          "features": [
+            {
+              "id": "front-pattern",
+              "type": "pattern",
+              "patternType": "text-repeat",
+              "text": "JR",
+              "spacing": 6,
+              "rotation": 0,
+              "fontSize": 4,
+              "relief": { "mode": "deboss", "depth": 0.2 },
+              "material": "base",
+              "zIndex": 0
+            },
+            {
+              "id": "front-name",
+              "type": "text-block",
+              "position": { "x": 42.5, "y": 22, "anchor": "center" },
+              "width": 70,
+              "font": "Montserrat",
+              "fontSize": 4.5,
+              "fontStyle": "bold",
+              "align": "center",
+              "lines": ["{{name}}"],
+              "relief": { "mode": "emboss", "height": 0.4 },
+              "material": "text",
+              "zIndex": 1
+            },
+            {
+              "id": "front-title",
+              "type": "text-block",
+              "position": { "x": 42.5, "y": 30, "anchor": "center" },
+              "width": 70,
+              "font": "Courier New",
+              "fontSize": 3.0,
+              "fontStyle": "regular",
+              "align": "center",
+              "lines": ["{{title}}"],
+              "relief": { "mode": "emboss", "height": 0.3 },
+              "material": "text",
+              "zIndex": 1
+            }
+          ]
+        },
+        "back": {
+          "features": [
+            {
+              "id": "back-pattern",
+              "type": "pattern",
+              "patternType": "text-repeat",
+              "text": "CF",
+              "spacing": 10,
+              "rotation": 45,
+              "fontSize": 3,
+              "relief": { "mode": "deboss", "depth": 0.15 },
+              "material": "base",
+              "zIndex": 0
+            },
+            {
+              "id": "contact",
+              "type": "text-block",
+              "position": { "x": 8, "y": 12 },
+              "width": 40,
+              "font": "Courier New",
+              "fontSize": 3.0,
+              "fontStyle": "bold",
+              "align": "left",
+              "lineHeight": 1.5,
+              "lines": [
+                "{{name}}",
+                "{{title}}",
+                "{{email}}",
+                "{{github}}"
+              ],
+              "relief": { "mode": "emboss", "height": 0.4 },
+              "material": "text",
+              "zIndex": 1
+            },
+            {
+              "id": "qr",
+              "type": "qr",
+              "value": "{{website}}",
+              "position": { "x": 54, "y": 15 },
+              "size": 28,
+              "relief": { "mode": "emboss", "height": 0.4 },
+              "material": "text",
+              "zIndex": 2
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "exports": {
+    "preview": true,
+    "manufacturingReport": true,
+    "singleStl": true,
+    "colorSeparatedStl": true,
+    "threeMf": false
+  }
+}
