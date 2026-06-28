@@ -174,6 +174,15 @@ def build_summary_stage(ctx: Dict[str, Any]) -> StageResult:
         size_kb = mp.stat().st_size / 1024 if hasattr(mp, 'stat') else 0
         lines.append(f"  - {rel} ({size_kb:.0f} KB)")
 
+    report_json = ctx.get("report_json_path")
+    report_md = ctx.get("report_md_path")
+    if report_json:
+        rel = os.path.relpath(str(report_json), str(export_paths.root)) if export_paths else str(report_json)
+        lines.append(f"  - {rel}")
+    if report_md:
+        rel = os.path.relpath(str(report_md), str(export_paths.root)) if export_paths else str(report_md)
+        lines.append(f"  - {rel}")
+
     if context and context.warnings:
         lines.append("Warnings:")
         for w in context.warnings:
@@ -186,26 +195,100 @@ def build_summary_stage(ctx: Dict[str, Any]) -> StageResult:
     return StageResult.ok(summary)
 
 
-def generate_scad_stage(ctx: Dict[str, Any]) -> StageResult:
-    """Stage: Generate OpenSCAD code via Geometry IR."""
+def build_geometry_ir_stage(ctx: Dict[str, Any]) -> StageResult:
+    """Stage: Build Geometry IR from domain model."""
     card = ctx.get("card")
     assets = ctx.get("generated_assets")
-    export_paths = ctx.get("export_paths")
 
-    if not card or not export_paths:
-        return StageResult.error("Missing card or export_paths")
+    if not card:
+        return StageResult.error("Missing card in context")
 
     try:
         from cardforge.geometry_ir.builder import GeometryBuilder
-        from cardforge.geometry_ir.openscad_visitor import OpenSCADVisitor
-        from pathlib import Path
 
-        # Build IR
         builder = GeometryBuilder()
         document = builder.build(card, assets or GeneratedAssets())
         ctx["geometry_document"] = document
+        return StageResult.ok("Geometry IR built")
+    except Exception as e:
+        return StageResult.error(f"Geometry IR build failed: {e}")
 
-        # Render SCAD
+
+def manufacturing_analysis_stage(ctx: Dict[str, Any]) -> StageResult:
+    """Stage: Run manufacturing analysis on Geometry IR."""
+    document = ctx.get("geometry_document")
+    export_paths = ctx.get("export_paths")
+    config = ctx.get("resolved_config", {})
+
+    if not document:
+        return StageResult.error("Missing geometry_document in context")
+
+    try:
+        from cardforge.manufacturing.profiles import ManufacturingProfile
+        from cardforge.manufacturing.analyzer import ManufacturingAnalyzer
+        from cardforge.manufacturing.export_report import export_report_json, export_report_markdown
+        from cardforge.manufacturing.formatter import format_report_console
+
+        # Select profile
+        profile_name = ctx.get("manufacturing_profile", "fdm-standard")
+        profile = _get_profile(profile_name)
+
+        # Analyze
+        analyzer = ManufacturingAnalyzer(profile)
+        report = analyzer.analyze(document)
+        ctx["manufacturing_report"] = report
+
+        # Export reports
+        if export_paths:
+            json_path = export_paths.reports_dir / "manufacturing_report.json"
+            md_path = export_paths.reports_dir / "manufacturing_report.md"
+            export_report_json(report, json_path)
+            export_report_markdown(report, md_path)
+            ctx["report_json_path"] = json_path
+            ctx["report_md_path"] = md_path
+
+        # Console output
+        console = format_report_console(report)
+        ctx["manufacturing_console"] = console
+
+        if not report.is_manufacturable and not ctx.get("ignore_manufacturing_errors"):
+            return StageResult.error(
+                f"Manufacturing analysis found {len(report.errors)} error(s). "
+                f"Use --ignore-manufacturing-errors to override."
+            )
+
+        return StageResult.ok(f"Score: {report.score}/100 — {report.score_label}")
+    except Exception as e:
+        return StageResult.error(f"Manufacturing analysis failed: {e}")
+
+
+def _get_profile(name: str) -> "ManufacturingProfile":
+    """Resolve a profile name to a ManufacturingProfile instance."""
+    from cardforge.manufacturing.profiles import ManufacturingProfile
+
+    profile_map = {
+        "fdm-standard": ManufacturingProfile.fdm_standard,
+        "fdm-fine": ManufacturingProfile.fdm_fine,
+        "sla": ManufacturingProfile.sla_standard,
+        "fdm": ManufacturingProfile.fdm_standard,
+    }
+    factory = profile_map.get(name, ManufacturingProfile.fdm_standard)
+    return factory()
+
+
+def generate_scad_stage(ctx: Dict[str, Any]) -> StageResult:
+    """Stage: Generate OpenSCAD code via Geometry IR."""
+    document = ctx.get("geometry_document")
+    export_paths = ctx.get("export_paths")
+
+    if not document or not export_paths:
+        return StageResult.error("Missing geometry_document or export_paths")
+
+    try:
+        from cardforge.geometry_ir.openscad_visitor import OpenSCADVisitor
+        from pathlib import Path
+
+        # Render SCAD from existing geometry document
         openscad_dir = Path(__file__).resolve().parent.parent.parent.parent / "openscad"
         visitor = OpenSCADVisitor(openscad_dir=openscad_dir)
         scad_code = visitor.render(document)

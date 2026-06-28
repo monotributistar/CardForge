@@ -16,6 +16,7 @@ class ExportPaths:
     stl_dir: Path
     stl_parts_dir: Path
     three_mf_dir: Path
+    reports_dir: Path
 
 
 def sanitize_project_name(name: str) -> str:
@@ -55,12 +56,14 @@ def prepare_export_paths(
         stl_dir=root / "stl",
         stl_parts_dir=root / "stl" / "parts",
         three_mf_dir=root / "3mf",
+        reports_dir=root / "reports",
     )
 
     # Create all directories
     for attr in [
         "assets_dir", "preview_dir", "scad_dir",
         "stl_dir", "stl_parts_dir", "three_mf_dir",
+        "reports_dir",
     ]:
         getattr(paths, attr).mkdir(parents=True, exist_ok=True)
 
