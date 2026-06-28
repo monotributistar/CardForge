@@ -25,4 +25,10 @@ Thumbs.db
 
 # uv
 uv.lock
+
+# Node
+node_modules/
+.pnpm-store/
+apps/*/dist/
+packages/*/dist/
 exports/_test_config.json

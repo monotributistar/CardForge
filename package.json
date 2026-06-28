@@ -1,0 +1,15 @@
+{
+  "name": "cardforge",
+  "private": true,
+  "description": "Open Manufacturing Compiler for Flat Objects — Core + Studio monorepo",
+  "scripts": {
+    "studio:dev": "pnpm --filter @cardforge/studio dev",
+    "studio:build": "pnpm --filter @cardforge/studio build",
+    "studio:preview": "pnpm --filter @cardforge/studio preview",
+    "core:test": "uv run pytest tests/ -v",
+    "core:prototype": "uv run python scripts/build_prototypes.py"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

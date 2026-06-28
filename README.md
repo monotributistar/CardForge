@@ -1,105 +1,114 @@
 # CardForge
 
-> Generador modular de objetos planos 3D personalizados  
+> Open Manufacturing Compiler for Flat Objects  
 > tarjetas · credenciales · badges · etiquetas · placas · señalética
 
-[![Status](https://img.shields.io/badge/status-MVP%20Design-blue)](#)
+[![Tests](https://img.shields.io/badge/tests-462-green)](#)
 [![Python](https://img.shields.io/badge/python-3.11+-blue)](https://python.org)
 [![OpenSCAD](https://img.shields.io/badge/openscad-2021.01-yellow)](https://openscad.org)
+[![TypeScript](https://img.shields.io/badge/typescript-5.5-blue)](https://typescriptlang.org)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 ---
 
-## Qué es CardForge
+## What is CardForge?
 
-CardForge convierte archivos de configuración JSON en objetos 3D listos para imprimir. Sin Blender. Sin diseño manual. Sin tocar geometría.
+CardForge converts editable `.cardforge.json` documents into printable 3D objects. Write a config declaring what you want (text, QR, logo, pattern, colors, relief) and CardForge generates the STL — plus previews, manufacturing analysis, and print-ready instructions.
 
-Escribís un config declarando qué querés (texto, QR, logo, patrón, colores, relieve) y CardForge genera el STL.
+**First use case:** 3D-printed business cards with embossed text, functional QR codes, decorative patterns, and multiple colors.
 
-```
-config.json  →  [CardForge]  →  tarjeta.stl
-```
+**Designed to extend:** event badges, product labels, desk plates, keychain cards, QR signs — all from the same engine.
 
-**Primer caso de uso:** tarjetas de presentación impresas en 3D con texto en relieve, QR funcionales, patrones decorativos y múltiples colores.
-
-**Diseñado para extenderse:** badges de evento, etiquetas de producto, placas de escritorio, llaveros, señalética QR — todo con el mismo motor.
-
-## Filosofía
-
-- **Declarativo.** La config es la fuente de verdad. El STL es un artefacto derivado.
-- **Modular.** Cada cara está compuesta de features independientes (texto, QR, logo, patrón).
-- **Extensible.** El core no depende de "tarjetas". Soporta cualquier objeto plano.
-- **Imprimible por diseño.** Cada decisión respeta las restricciones de FDM con nozzle 0.4 mm.
-
-## Quick Start
-
-```bash
-# Clonar
-git clone https://github.com/monotributistar/CardForge.git
-cd CardForge
-
-# Instalar dependencias
-uv sync
-
-# Generar una tarjeta
-python scripts/build.py configs/examples/business_card_basic.json
-
-# Ver resultado
-ls exports/Javier_Business_Card/stl/
-```
-
-## Pipeline
+## Architecture
 
 ```
-CONFIG (JSON)  →  COMPOSE (Python)  →  GEOMETRY (OpenSCAD)  →  EXPORT (STL)
+.cardforge.json → Core Compiler → STL + Previews + Reports
+                      │
+                      └── Geometry IR ──┬── OpenSCAD → STL
+                                        ├── SVG → Preview
+                                        └── Analyzer → Manufacturing Report
+
+Studio (React) → static outputs (future: live API)
 ```
 
-1. Lee y valida la configuración
-2. Resuelve variables (`{{owner.name}}`)
-3. Genera assets (QR SVG, patrones)
-4. Genera código OpenSCAD
-5. Renderiza con OpenSCAD CLI
-6. Exporta STL (simple + separado por color)
-7. Genera previews (SVG + PNG)
-
-## Estructura
+## Monorepo Structure
 
 ```
 cardforge/
-├── docs/               ← Documentación completa
-├── configs/examples/   ← Configuraciones de ejemplo
-├── src/cardforge/      ← Paquete Python
-├── openscad/modules/   ← Módulos de geometría paramétrica
-├── scripts/            ← Scripts de utilidad
-├── assets/             ← Fuentes, logos, patrones
-└── exports/            ← Salidas generadas
+├── apps/studio/          # CardForge Studio — visual IDE (React + Vite)
+├── src/cardforge/        # Python Core — headless compiler
+├── openscad/             # OpenSCAD modules
+├── packages/             # Shared components & schemas (future)
+├── examples/             # Prototype documents
+├── docs/                 # Full documentation
+└── scripts/              # Build scripts
 ```
 
-## Tecnologías
+See [docs/MONOREPO.md](docs/MONOREPO.md) for details.
 
-| Herramienta | Rol |
-|-------------|-----|
-| Python 3.11+ | Orquestación, CLI, generación de assets |
-| OpenSCAD | Geometría paramétrica declarativa |
-| SVG | Formato intermedio (QR, logos, patrones) |
-| JSON | Configuración (fuente de verdad) |
-| STL | Formato de salida primario |
-| 3MF | Formato futuro (v0.2) |
+## Quick Start
 
-## Documentación
+### Core (Python)
 
-- [📐 Arquitectura](docs/ARCHITECTURE.md) — Filosofía, pipeline, modelo de componentes
-- [🧩 Componentes](docs/COMPONENTS.md) — Contratos de cada feature y sus interfaces
-- [⚙️ Pipeline](docs/PIPELINE.md) — Cada etapa del pipeline en detalle
-- [🖨️ Guía de Impresión](docs/PRINTING_GUIDELINES.md) — Restricciones FDM 0.4mm
-- [🗺️ Roadmap](docs/ROADMAP.md) — Plan por versiones
+```bash
+# Install dependencies
+uv sync --extra dev
 
-## Estado
+# Run tests (462)
+uv run pytest tests/ -v
 
-**v0.1 — En diseño.** La arquitectura y documentación están completas. La implementación del pipeline comienza a continuación.
+# Build a prototype
+uv run python scripts/build.py examples/prototypes/card_minimal.cardforge.json --prototype
 
-Ver [ROADMAP.md](docs/ROADMAP.md) para el plan detallado.
+# Build all prototypes
+uv run python scripts/build_prototypes.py
+```
 
-## Licencia
+### Studio (Web)
+
+```bash
+# Install JS dependencies
+pnpm install
+
+# Start dev server
+pnpm studio:dev
+
+# Production build
+pnpm studio:build
+```
+
+## Status
+
+- **Core:** Feature-complete for v0.1 — 462 tests, STL export, multi-color, manufacturing analysis
+- **Studio:** Foundation — layout and static preview (editing not yet implemented)
+- **Documentation:** [docs/](docs/) — architecture, domain model, pipeline, manufacturing, prototype loop
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Core Compiler | Python 3.11+ (uv) |
+| Geometry Engine | OpenSCAD 2021.01 |
+| Config Format | JSON + `.cardforge.json` documents |
+| Studio Frontend | React 18 + TypeScript + Vite |
+| Package Manager | pnpm (JS) + uv (Python) |
+| Testing | pytest (462 tests) |
+
+## Documentation
+
+- [📐 Architecture](docs/ARCHITECTURE.md)
+- [🧩 Domain Model](docs/DOMAIN_MODEL.md)
+- [⚙️ Pipeline](docs/PIPELINE.md)
+- [🖨️ Printing Guidelines](docs/PRINTING_GUIDELINES.md)
+- [🔧 Manufacturing Engine](docs/MANUFACTURING_ENGINE.md)
+- [📊 Build Reports](docs/BUILD_REPORTS.md)
+- [🎨 SVG Visitor](docs/SVG_VISITOR.md)
+- [🔄 Prototype Loop](docs/PROTOTYPE_LOOP.md)
+- [📦 Monorepo](docs/MONOREPO.md)
+- [🖼️ Geometry IR](docs/GEOMETRY_IR.md)
+- [🗺️ Roadmap](docs/ROADMAP.md)
+- [✅ Physical Checklist](docs/PHYSICAL_PROTOTYPE_CHECKLIST.md)
+
+## License
 
 MIT — Javier Rodriguez, 2026.
