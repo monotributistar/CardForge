@@ -91,6 +91,26 @@ def health():
             "timestamp": datetime.now().isoformat()}
 
 
+@app.post("/api/migrate")
+def api_migrate(body: dict):
+    """Normalize any document (v1 or v2) to validated v2 — the Studio uses
+    this on Open so the editor always works on v2 natively."""
+    from cardforge.document.migrate import detect_version, migrate_v1_to_v2
+    from cardforge.document.schema_v2 import DocumentValidationError, validate_v2
+
+    data = body.get("document") or {}
+    version = detect_version(data)
+    if version == "1":
+        data = migrate_v1_to_v2(data)
+    elif version != "2":
+        return _error(400, "Not a CardForge document (v1 or v2)")
+    try:
+        validate_v2(data)
+    except DocumentValidationError as e:
+        return _error(422, "Document invalid after migration", details=e.errors[:20])
+    return {"ok": True, "document": data, "migrated": version == "1"}
+
+
 @app.post("/api/compile")
 def api_compile(body: dict):
     """Compile a document for live preview. Fast path — no files touched."""

@@ -72,3 +72,17 @@ class TestExport:
             assert any(n.endswith(".3mf") for n in names)
             assert any(n.startswith("stl/") for n in names)
             assert "manufacturing_report.json" in names
+
+
+class TestMigrate:
+    def test_migrate_v1(self):
+        r = client.post("/api/migrate", json={"document": example_doc()})
+        assert r.status_code == 200
+        body = r.json()
+        assert body["migrated"] is True
+        assert body["document"]["cardforge"] == "2.0"
+
+    def test_v2_passthrough(self):
+        v2 = client.post("/api/migrate", json={"document": example_doc()}).json()["document"]
+        r = client.post("/api/migrate", json={"document": v2})
+        assert r.json()["migrated"] is False
