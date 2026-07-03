@@ -45,6 +45,8 @@ export function createNewDocument(): DocumentV2 {
           },
         ],
       },
+      // Back is the bed-facing face — it must stay flat, so its features are
+      // flush inlays (colour imprinted level with the surface), never emboss.
       back: {
         features: [
           {
@@ -53,7 +55,7 @@ export function createNewDocument(): DocumentV2 {
             name: 'QR',
             transform: { x: 30.5, y: 10 },
             material: 'text',
-            relief: { mode: 'emboss', height: 0.4 },
+            relief: { mode: 'flush', depth: 0.4 },
             qrType: 'url',
             fields: { url: 'https://example.com' },
             size: 24,
@@ -65,7 +67,7 @@ export function createNewDocument(): DocumentV2 {
             name: 'Caption',
             transform: { x: 30.5, y: 40 },
             material: 'text',
-            relief: { mode: 'emboss', height: 0.4 },
+            relief: { mode: 'flush', depth: 0.4 },
             lines: ['example.com'],
             font: { family: 'Helvetica Neue', size: 3 },
             align: 'left',
@@ -76,13 +78,18 @@ export function createNewDocument(): DocumentV2 {
   }
 }
 
-/** Sensible default feature of a given type, placed at x:10, y:10. */
-export function defaultFeature(type: Feature['type'], _face: FaceId, materialId = 'text'): Feature {
+/** Sensible default feature of a given type, placed at x:10, y:10.
+ *  Back (bed-facing) features default to a flush inlay — the back must stay
+ *  flat, so emboss is not offered there. Front features emboss (raised). */
+export function defaultFeature(type: Feature['type'], face: FaceId, materialId = 'text'): Feature {
+  const relief = face === 'back'
+    ? { mode: 'flush' as const, depth: 0.4 }
+    : { mode: 'emboss' as const, height: 0.4 }
   const base = {
     id: uid(type),
     transform: { x: 10, y: 10 },
     material: materialId,
-    relief: { mode: 'emboss' as const, height: 0.4 },
+    relief,
   }
   switch (type) {
     case 'text-block':

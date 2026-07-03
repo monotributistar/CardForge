@@ -98,8 +98,17 @@ def migrate_v1_to_v2(v1: Dict[str, Any]) -> Dict[str, Any]:
         features = []
         for feat in face.get("features", []):
             migrated = _migrate_feature(feat, known_ids)
-            if migrated is not None:
-                features.append(migrated)
+            if migrated is None:
+                continue
+            # The back face prints against the bed and must stay flat: v1
+            # authored back-face emboss (never actually printable) becomes a
+            # flush inlay, preserving the "coloured design on the back" intent.
+            if face_id == "back" and migrated["relief"].get("mode") == "emboss":
+                migrated["relief"] = {
+                    "mode": "flush",
+                    "depth": migrated["relief"].get("height", 0.3),
+                }
+            features.append(migrated)
         out["faces"][face_id] = {"features": features}
 
     return out

@@ -20,7 +20,8 @@ def compiled():
     doc = make_doc(
         front=[square("e", 10, 10, 10, "text", {"mode": "emboss", "height": 0.5}),
                square("f", 30, 15, 8, "accent", {"mode": "flush", "depth": 0.4})],
-        back=[square("b", 10, 10, 6, "text", {"mode": "emboss", "height": 0.3})])
+        # back is the bed face — flush inlay (not emboss)
+        back=[square("b", 10, 10, 6, "text", {"mode": "flush", "depth": 0.3})])
     scene, _ = compile_document(doc)
     return doc, scene
 
@@ -64,10 +65,10 @@ class Test3MF:
             tris = obj.findall(f".//{NS}triangle")
             assert len(tris) == vols[mid].num_tri()
 
-    def test_bed_normalization(self):
+    def test_bed_normalization_rests_on_bed(self):
         doc, scene = compiled()
-        # kernel space: back emboss goes below 0
-        assert min(v.bounding_box()[2] for v in scene.non_empty().values()) < 0
+        # valid docs never dip below the bed plane (back emboss is rejected)
+        assert min(v.bounding_box()[2] for v in scene.non_empty().values()) >= -1e-9
         vols = normalized_volumes(scene)
         min_z = min(v.bounding_box()[2] for v in vols.values())
         assert min_z == pytest.approx(0.0, abs=1e-9), "model must rest on the bed"

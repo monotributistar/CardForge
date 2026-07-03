@@ -102,7 +102,8 @@ const FeatureInspector: React.FC<{ doc: DocumentV2; feature: Feature; selectedId
         </Row>
       </Section>
 
-      <ReliefEditor feature={feature} materials={doc.materials} edit={edit} />
+      <ReliefEditor feature={feature} materials={doc.materials} edit={edit}
+        isBack={doc.faces.back?.features.some(f => f.id === feature.id) ?? false} />
 
       {feature.type === 'text-block' && <TextBlockEditor feature={feature} edit={edit} />}
       {feature.type === 'text-pattern' && <TextPatternEditor feature={feature} edit={edit} />}
@@ -119,19 +120,28 @@ type EditFn = <T extends Feature>(fn: (f: T) => void) => void
 // ── Relief ───────────────────────────────────────────────────────────
 
 const RELIEF_MODES: ReliefMode[] = ['emboss', 'deboss', 'flush', 'cut', 'deboss-backed']
+// The bed-facing (back) face must stay flat — no emboss (raised) geometry.
+const BACK_RELIEF_MODES: ReliefMode[] = ['deboss', 'flush', 'cut', 'deboss-backed']
 
-const ReliefEditor: React.FC<{ feature: Feature; materials: Material[]; edit: EditFn }> = ({ feature, materials, edit }) => {
+const ReliefEditor: React.FC<{ feature: Feature; materials: Material[]; edit: EditFn; isBack: boolean }> = ({ feature, materials, edit, isBack }) => {
   const relief = feature.relief
+  const modes = isBack ? BACK_RELIEF_MODES : RELIEF_MODES
   return (
     <Section title="Relief">
       <Row label="Mode">
-        <Select value={relief.mode} options={RELIEF_MODES.map(m => [m, m])}
+        <Select value={relief.mode} options={modes.map(m => [m, m])}
           onCommit={v => edit(f => {
             f.relief.mode = v as ReliefMode
             if (v === 'emboss' && f.relief.height == null) f.relief.height = 0.4
             if ((v === 'deboss' || v === 'deboss-backed') && f.relief.depth == null) f.relief.depth = 0.4
+            if (v === 'flush' && f.relief.depth == null) f.relief.depth = 0.4
           })} />
       </Row>
+      {isBack && relief.mode === 'emboss' && (
+        <div style={{ fontSize: 11, color: '#f85149', padding: '2px 0' }}>
+          Emboss is not printable on the bed-facing face — pick deboss, cut or flush.
+        </div>
+      )}
       {relief.mode === 'emboss' && (
         <Row label="Height (mm)"><NumInput value={relief.height ?? 0.4} step={0.1} onCommit={v => edit(f => { f.relief.height = v })} /></Row>
       )}

@@ -73,12 +73,15 @@ def check_constraints(doc: DocumentV2, trace: CompileTrace) -> List[ConstraintIs
                     f"{r.relief_mode} depth {r.relief_value}mm ≥ object thickness "
                     f"{thickness}mm — use a cut instead", **loc))
 
-        # 6. Back-face emboss prints against the bed
+        # 6. Emboss on the bed-facing (back) face is not printable. That face
+        #    rests on the print bed and must stay flat — only carving (deboss/
+        #    cut) or flush inlays are allowed there.
         if r.face_id == "back" and r.relief_mode == "emboss":
             issues.append(ConstraintIssue(
-                Severity.WARNING, "back-emboss-on-bed",
-                "Emboss on the back face prints against the bed (first-layer "
-                "squish will distort it); prefer deboss or flush on the back", **loc))
+                Severity.ERROR, "back-emboss-not-flat",
+                "The bed-facing (back) face must stay flat — it prints against "
+                "the bed. Use deboss/cut to carve, or flush to inlay, instead "
+                "of emboss.", **loc))
 
     # 7. Overlap between features on the same face (warning; the kernel
     #    resolves overlaps deterministically, but they are usually authoring

@@ -56,10 +56,13 @@ class TestConstraints:
         issues = issues_for(doc)
         assert "depth-exceeds-thickness" in codes(issues)
 
-    def test_back_emboss_warning(self):
+    def test_back_emboss_is_error(self):
         doc = make_doc(back=[square("b", 10, 10, 10, "text",
                                     {"mode": "emboss", "height": 0.4})])
-        assert "back-emboss-on-bed" in codes(issues_for(doc))
+        issues = issues_for(doc)
+        assert "back-emboss-not-flat" in codes(issues)
+        err = next(i for i in issues if i.code == "back-emboss-not-flat")
+        assert err.severity == Severity.ERROR
 
     def test_overlap_warning(self):
         doc = make_doc(front=[

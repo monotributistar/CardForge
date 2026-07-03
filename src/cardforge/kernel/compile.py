@@ -78,6 +78,19 @@ def compile_document(doc: DocumentV2, asset_root: Path | str = ".") -> Tuple[Com
             trace.records.append(fs.record)
 
             relief = feature.relief
+
+            # Bed-facing (back) face must stay flat: it prints against the bed,
+            # so raised geometry there is unprintable (it would lift the body off
+            # the bed or collide with it). Only carving (deboss/cut) and flush
+            # inlays are allowed. Emboss on the back emits NO geometry; the
+            # constraint layer raises this as a blocking error (the record above
+            # is kept so the feature still appears and the error fires).
+            if is_back and relief.mode == "emboss":
+                trace.warnings.append(
+                    f"{face_id}/{feature.id}: emboss is not allowed on the "
+                    "bed-facing face — it must stay flat (use deboss, cut, or flush)")
+                continue
+
             for mat, cs in fs.shapes:
                 if cs.is_empty():
                     continue
@@ -91,10 +104,10 @@ def compile_document(doc: DocumentV2, asset_root: Path | str = ".") -> Tuple[Com
                     continue
 
                 if relief.mode == "emboss":
-                    h = relief.height
-                    z0 = T if not is_back else -h
+                    # Front (presentation) face only — back emboss was rejected
+                    # above. Emboss sits on the top surface, growing upward.
                     adds.append(_SolidOp((feature.z_order, seq), mat,
-                                         _extrude_at(cs, h, z0)))
+                                         _extrude_at(cs, relief.height, T)))
 
                 elif relief.mode == "deboss":
                     d = min(relief.depth, T - _EPS)

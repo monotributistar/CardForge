@@ -152,16 +152,27 @@ class TestDebossBacked:
 
 
 class TestBackFace:
-    def test_back_emboss_mirrored_and_below_bed(self):
+    def test_back_emboss_rejected_bed_stays_flat(self):
+        """Emboss on the bed-facing face must emit NO geometry (it would
+        protrude below the bed). The card stays a flat base."""
         doc = make_doc(back=[square("b", 10, 10, 10, "text",
                                     {"mode": "emboss", "height": 0.5})])
+        scene, trace, vols = volumes_of(doc)
+        assert "text" not in vols, "back emboss must not produce geometry"
+        assert vols["base"].volume() == pytest.approx(RECT_AREA * T, rel=1e-6)
+        # nothing below the bed plane
+        assert vols["base"].bounding_box()[2] == pytest.approx(0.0)
+        assert any("emboss is not allowed" in w for w in trace.warnings)
+
+    def test_bed_face_flat_no_geometry_below_zero(self):
+        """Whatever back features are used, no volume may dip below z=0."""
+        doc = make_doc(back=[
+            square("d", 8, 8, 8, "base", {"mode": "deboss", "depth": 0.3}),
+            square("f", 20, 8, 8, "accent", {"mode": "flush", "depth": 0.4}),
+        ])
         scene, _, vols = volumes_of(doc)
-        bb = vols["text"].bounding_box()
-        assert (bb[2], bb[5]) == pytest.approx((-0.5, 0.0)), \
-            "back emboss grows downward from z=0"
-        # doc x=10 (left side, seen from the back) → physical right side:
-        # mirrored anchor lands at W−10−size = 40
-        assert (bb[0], bb[3]) == pytest.approx((W - 10 - 10, W - 10))
+        for mat, v in vols.items():
+            assert v.bounding_box()[2] >= -1e-9, f"{mat} dips below the bed"
 
     def test_back_deboss_carves_bottom(self):
         doc = make_doc(back=[square("bd", 10, 10, 10, "base",
