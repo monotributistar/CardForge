@@ -1,0 +1,304 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cardforge.dev/schemas/v2.schema.json",
+  "title": "CardForge Document v2",
+  "type": "object",
+  "required": ["cardforge", "meta", "object", "materials", "faces"],
+  "additionalProperties": false,
+  "properties": {
+    "cardforge": { "const": "2.0" },
+    "meta": {
+      "type": "object",
+      "required": ["id", "name"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "created": { "type": "string" },
+        "modified": { "type": "string" }
+      }
+    },
+    "object": {
+      "type": "object",
+      "required": ["outline", "thickness"],
+      "additionalProperties": false,
+      "properties": {
+        "outline": { "$ref": "#/$defs/outline" },
+        "thickness": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "materials": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/material" }
+    },
+    "variables": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "assets": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "manufacturing": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "process": { "enum": ["fdm", "sla", "laser", "cnc"] },
+        "profile": { "type": "string" },
+        "nozzle": { "type": "number", "exclusiveMinimum": 0 },
+        "layerHeight": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "faces": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "front": { "$ref": "#/$defs/face" },
+        "back": { "$ref": "#/$defs/face" }
+      }
+    }
+  },
+  "$defs": {
+    "outline": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["type", "width", "height"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "rect" },
+            "width": { "type": "number", "exclusiveMinimum": 0 },
+            "height": { "type": "number", "exclusiveMinimum": 0 }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "width", "height", "radius"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "rounded-rect" },
+            "width": { "type": "number", "exclusiveMinimum": 0 },
+            "height": { "type": "number", "exclusiveMinimum": 0 },
+            "radius": { "type": "number", "minimum": 0 }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "svgPath", "width", "height"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "path" },
+            "svgPath": { "type": "string", "minLength": 1 },
+            "width": { "type": "number", "exclusiveMinimum": 0 },
+            "height": { "type": "number", "exclusiveMinimum": 0 }
+          }
+        }
+      ]
+    },
+    "material": {
+      "type": "object",
+      "required": ["id", "name", "color"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "color": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
+        "slot": { "type": "integer", "minimum": 1 },
+        "role": { "enum": ["base", "text", "accent", "detail", "support"] }
+      }
+    },
+    "face": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "features": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/feature" }
+        }
+      }
+    },
+    "transform": {
+      "type": "object",
+      "required": ["x", "y"],
+      "additionalProperties": false,
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "rotation": { "type": "number" },
+        "scale": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "relief": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["mode", "height"],
+          "additionalProperties": false,
+          "properties": {
+            "mode": { "const": "emboss" },
+            "height": { "type": "number", "exclusiveMinimum": 0 }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["mode", "depth"],
+          "additionalProperties": false,
+          "properties": {
+            "mode": { "const": "deboss" },
+            "depth": { "type": "number", "exclusiveMinimum": 0 }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["mode", "depth"],
+          "additionalProperties": false,
+          "properties": {
+            "mode": { "const": "flush" },
+            "depth": { "type": "number", "exclusiveMinimum": 0 }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["mode"],
+          "additionalProperties": false,
+          "properties": {
+            "mode": { "const": "cut" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["mode", "depth", "floorMaterial", "floorThickness"],
+          "additionalProperties": false,
+          "properties": {
+            "mode": { "const": "deboss-backed" },
+            "depth": { "type": "number", "exclusiveMinimum": 0 },
+            "floorMaterial": { "type": "string", "minLength": 1 },
+            "floorThickness": { "type": "number", "exclusiveMinimum": 0 }
+          }
+        }
+      ]
+    },
+    "font": {
+      "type": "object",
+      "required": ["family", "size"],
+      "additionalProperties": false,
+      "properties": {
+        "family": { "type": "string", "minLength": 1 },
+        "size": { "type": "number", "exclusiveMinimum": 0 },
+        "weight": { "type": "number", "minimum": 1, "maximum": 1000 },
+        "italic": { "type": "boolean" },
+        "axes": {
+          "type": "object",
+          "additionalProperties": { "type": "number" }
+        }
+      }
+    },
+    "featureBase": {
+      "type": "object",
+      "required": ["id", "type", "transform", "material", "relief"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "enum": ["text-block", "text-pattern", "pattern", "qr", "icon", "shape"] },
+        "name": { "type": "string" },
+        "transform": { "$ref": "#/$defs/transform" },
+        "material": { "type": "string", "minLength": 1 },
+        "relief": { "$ref": "#/$defs/relief" },
+        "zOrder": { "type": "integer" },
+        "visible": { "type": "boolean" }
+      }
+    },
+    "feature": {
+      "allOf": [
+        { "$ref": "#/$defs/featureBase" },
+        {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "type": { "const": "text-block" },
+                "lines": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+                "font": { "$ref": "#/$defs/font" },
+                "align": { "enum": ["left", "center", "right"] },
+                "lineHeight": { "type": "number", "exclusiveMinimum": 0 }
+              },
+              "required": ["type", "lines", "font"]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": { "const": "text-pattern" },
+                "text": { "type": "string", "minLength": 1 },
+                "font": { "$ref": "#/$defs/font" },
+                "spacing": { "type": "number", "exclusiveMinimum": 0 },
+                "angle": { "type": "number" }
+              },
+              "required": ["type", "text", "font", "spacing"]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": { "const": "pattern" },
+                "patternType": { "enum": ["dots", "lines", "grid", "hex"] },
+                "spacing": { "type": "number", "exclusiveMinimum": 0 },
+                "angle": { "type": "number" },
+                "elementSize": { "type": "number", "exclusiveMinimum": 0 },
+                "region": { "enum": ["face", "bounds"] },
+                "width": { "type": "number", "exclusiveMinimum": 0 },
+                "height": { "type": "number", "exclusiveMinimum": 0 }
+              },
+              "required": ["type", "patternType", "spacing"]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": { "const": "qr" },
+                "qrType": { "enum": ["url", "vcard", "wifi", "email", "text"] },
+                "fields": {
+                  "type": "object",
+                  "additionalProperties": { "type": "string" }
+                },
+                "size": { "type": "number", "exclusiveMinimum": 0 },
+                "errorCorrection": { "enum": ["L", "M", "Q", "H"] },
+                "quietZone": { "type": "number", "minimum": 0 }
+              },
+              "required": ["type", "qrType", "fields", "size"]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": { "const": "icon" },
+                "svgAsset": { "type": "string" },
+                "svgInline": { "type": "string" },
+                "width": { "type": "number", "exclusiveMinimum": 0 },
+                "height": { "type": "number", "exclusiveMinimum": 0 },
+                "colorMap": {
+                  "type": "object",
+                  "additionalProperties": { "type": "string" }
+                }
+              },
+              "required": ["type", "width"]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": { "const": "shape" },
+                "shapeType": { "enum": ["rect", "rounded-rect", "circle", "ring", "frame", "corner-marks", "path"] },
+                "width": { "type": "number", "exclusiveMinimum": 0 },
+                "height": { "type": "number", "exclusiveMinimum": 0 },
+                "radius": { "type": "number", "minimum": 0 },
+                "diameter": { "type": "number", "exclusiveMinimum": 0 },
+                "strokeWidth": { "type": "number", "exclusiveMinimum": 0 },
+                "inset": { "type": "number", "minimum": 0 },
+                "length": { "type": "number", "exclusiveMinimum": 0 },
+                "svgPath": { "type": "string" }
+              },
+              "required": ["type", "shapeType"]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

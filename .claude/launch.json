@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "studio",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@cardforge/studio", "dev"],
+      "port": 5173,
+      "autoPort": false
+    }
+  ]
+}

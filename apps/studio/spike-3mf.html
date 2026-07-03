@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>3MF spike</title></head>
+<body style="margin:0;background:#111">
+<script type="module">
+  import * as THREE from 'three'
+  import { ThreeMFLoader } from 'three/examples/jsm/loaders/3MFLoader.js'
+
+  const log = (...a) => console.log('[SPIKE]', ...a)
+
+  try {
+    const loader = new ThreeMFLoader()
+    loader.load('/spike.3mf', (object) => {
+      const meshes = []
+      object.traverse((child) => { if (child.isMesh) meshes.push(child) })
+      const colors = meshes.map(m => {
+        const mat = Array.isArray(m.material) ? m.material[0] : m.material
+        return '#' + mat.color.getHexString()
+      })
+      const tris = meshes.map(m => (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3)
+      log('meshes=', meshes.length, 'colors=', JSON.stringify(colors), 'tris=', JSON.stringify(tris))
+
+      const ok = meshes.length === 2
+        && colors.map(c => c.toLowerCase()).sort().join(',') === '#1a1a2e,#d4af37'
+        && tris.every(t => t > 0)
+      log(ok ? 'SPIKE-6B-PASS' : 'SPIKE-6B-FAIL')
+      document.title = ok ? 'SPIKE OK' : 'SPIKE FAIL'
+
+      // Render it so a screenshot shows both colors
+      const scene = new THREE.Scene()
+      scene.background = new THREE.Color(0x111111)
+      const cam = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 500)
+      cam.position.set(25, -35, 30); cam.lookAt(0, 0, 0)
+      scene.add(new THREE.AmbientLight(0xffffff, 0.7))
+      const dir = new THREE.DirectionalLight(0xffffff, 1.2); dir.position.set(30, -20, 50)
+      scene.add(dir)
+      scene.add(object)
+      const renderer = new THREE.WebGLRenderer({ antialias: true })
+      renderer.setSize(innerWidth, innerHeight)
+      document.body.appendChild(renderer.domElement)
+      renderer.render(scene, cam)
+    }, undefined, (err) => { log('SPIKE-6B-FAIL load error', err?.message || err); document.title = 'SPIKE FAIL' })
+  } catch (e) {
+    log('SPIKE-6B-FAIL exception', e.message)
+    document.title = 'SPIKE FAIL'
+  }
+</script>
+</body>
+</html>
