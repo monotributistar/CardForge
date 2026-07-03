@@ -4,7 +4,7 @@
 
 import React from 'react'
 import type {
-  DocumentV2, Feature, Material, ReliefMode,
+  DocumentV2, Feature, Material, ReliefMode, Outline, Fill,
   TextBlockFeature, TextPatternFeature, PatternFeature, QRFeature, IconFeature, ShapeFeature,
 } from '../../types/cardforge'
 import { useDocumentStore, getActiveTab, findFeature, removeFeatures } from '../../state/DocumentStore'
@@ -22,7 +22,7 @@ export const Inspector: React.FC = () => {
     return <Empty text="No document open" />
   }
   const doc = tab.doc
-  const found = tab.selectedFeatureId ? findFeature(doc, tab.selectedFeatureId) : null
+  const found = tab.selectedFeatureId && !tab.objectSelected ? findFeature(doc, tab.selectedFeatureId) : null
 
   return (
     <div style={{ height: '100%', overflowY: 'auto', padding: 10, fontSize: 12, color: '#c9d1d9' }}>
@@ -105,6 +105,8 @@ const FeatureInspector: React.FC<{ doc: DocumentV2; feature: Feature; selectedId
       <ReliefEditor feature={feature} materials={doc.materials} edit={edit}
         isBack={doc.faces.back?.features.some(f => f.id === feature.id) ?? false} />
 
+      <BackingEditor feature={feature} materials={doc.materials} edit={edit} />
+
       {feature.type === 'text-block' && <TextBlockEditor feature={feature} edit={edit} />}
       {feature.type === 'text-pattern' && <TextPatternEditor feature={feature} edit={edit} />}
       {feature.type === 'pattern' && <PatternEditor feature={feature} edit={edit} />}
@@ -157,6 +159,44 @@ const ReliefEditor: React.FC<{ feature: Feature; materials: Material[]; edit: Ed
           <Row label="Floor thickness"><NumInput value={relief.floorThickness ?? 0.4} step={0.1} onCommit={v => edit(f => { f.relief.floorThickness = v })} /></Row>
         </>
       )}
+    </Section>
+  )
+}
+
+// ── Backing ──────────────────────────────────────────────────────────
+
+const BackingEditor: React.FC<{ feature: Feature; materials: Material[]; edit: EditFn }> = ({ feature, materials, edit }) => {
+  const mode = feature.backing?.mode ?? 'auto'
+  return (
+    <Section title="Backing">
+      <Row label="Mode">
+        <Select value={mode} options={[['auto', 'Auto'], ['on', 'Always on'], ['off', 'Off']]}
+          onCommit={v => edit(f => {
+            if (v === 'auto') delete f.backing
+            else f.backing = { ...(f.backing ?? {}), mode: v as 'on' | 'off' }
+          })} />
+      </Row>
+      {mode === 'on' && (
+        <>
+          <Row label="Thickness">
+            <NumInput value={feature.backing?.thickness ?? 0} step={0.1} placeholder="0 = full"
+              onCommit={v => edit(f => {
+                if (!f.backing) f.backing = { mode: 'on' }
+                if (v > 0) f.backing.thickness = v; else delete f.backing.thickness
+              })} />
+          </Row>
+          <Row label="Material">
+            <MaterialSelect materials={materials} value={feature.backing?.material ?? ''} allowEmpty emptyLabel="Base (default)"
+              onCommit={v => edit(f => {
+                if (!f.backing) f.backing = { mode: 'on' }
+                if (v) f.backing.material = v; else delete f.backing.material
+              })} />
+          </Row>
+        </>
+      )}
+      <div style={{ fontSize: 11, color: '#484f58', padding: '2px 0' }}>
+        Adds a solid pad so the feature isn't left floating over a lattice base.
+      </div>
     </Section>
   )
 }
@@ -370,8 +410,104 @@ const ShapeEditor: React.FC<{ feature: ShapeFeature; edit: EditFn }> = ({ featur
 
 // ── Document inspector (nothing selected) ────────────────────────────
 
+// ── Corner radii (uniform + per-corner) ──────────────────────────────
+
+type RoundedRect = Extract<Outline, { type: 'rounded-rect' }>
+
+const CornerRadiusEditor: React.FC<{ outline: RoundedRect; applyEdit: ApplyEdit }> = ({ outline, applyEdit }) => {
+  const corners = outline.corners
+  const perCorner = corners != null
+  const eff = (k: 'tl' | 'tr' | 'br' | 'bl') => corners?.[k] ?? outline.radius
+
+  const setCorner = (k: 'tl' | 'tr' | 'br' | 'bl', v: number) => applyEdit(d => {
+    const o = d.object.outline
+    if (o.type !== 'rounded-rect') return
+    // Materialise all four from the effective values, then set the one edited.
+    const base = { tl: eff('tl'), tr: eff('tr'), br: eff('br'), bl: eff('bl') }
+    base[k] = v
+    o.corners = base
+  })
+
+  const cornerInput = (k: 'tl' | 'tr' | 'br' | 'bl') => (
+    <NumInput value={eff(k)} step={0.5} onCommit={v => setCorner(k, v)} />
+  )
+
+  return (
+    <>
+      <Row label="Radius (mm)">
+        <NumInput value={outline.radius} step={0.5} onCommit={v => applyEdit(d => {
+          if (d.object.outline.type === 'rounded-rect') d.object.outline.radius = v
+        })} />
+      </Row>
+      <Row label="Per-corner">
+        <input type="checkbox" checked={perCorner}
+          onChange={e => applyEdit(d => {
+            const o = d.object.outline
+            if (o.type !== 'rounded-rect') return
+            if (e.target.checked) o.corners = { tl: o.radius, tr: o.radius, br: o.radius, bl: o.radius }
+            else delete o.corners
+          })} />
+      </Row>
+      {perCorner && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 6 }}>
+          <div style={{ display: 'flex', gap: 4 }}>{cornerInput('tl')}{cornerInput('tr')}</div>
+          <div style={{ display: 'flex', gap: 4 }}>{cornerInput('bl')}{cornerInput('br')}</div>
+          <button
+            onClick={() => applyEdit(d => {
+              const o = d.object.outline
+              if (o.type === 'rounded-rect') delete o.corners
+            })}
+            style={{ alignSelf: 'flex-start', background: '#21262d', color: '#8b949e', border: '1px solid #30363d', borderRadius: 4, padding: '2px 8px', fontSize: 11, cursor: 'pointer' }}
+          >Reset to uniform</button>
+        </div>
+      )}
+    </>
+  )
+}
+
+// ── Fill (solid / lattice) ───────────────────────────────────────────
+
+const LATTICE_DEFAULTS: Extract<Fill, { type: 'lattice' }> = { type: 'lattice', pattern: 'grid', spacing: 5, lineWidth: 1.2, border: 2.5 }
+
+const FillEditor: React.FC<{ fill: Fill | undefined; applyEdit: ApplyEdit }> = ({ fill, applyEdit }) => {
+  const mode = fill?.type === 'lattice' ? 'lattice' : 'solid'
+  const lat = fill?.type === 'lattice' ? fill : LATTICE_DEFAULTS
+  const editLattice = (fn: (f: Extract<Fill, { type: 'lattice' }>) => void) => applyEdit(d => {
+    if (d.object.fill?.type !== 'lattice') return
+    fn(d.object.fill)
+  })
+  return (
+    <Section title="Fill">
+      <Row label="Mode">
+        <Select value={mode} options={[['solid', 'Solid'], ['lattice', 'Lattice']]}
+          onCommit={v => applyEdit(d => {
+            if (v === 'lattice') d.object.fill = { ...LATTICE_DEFAULTS }
+            else delete d.object.fill
+          })} />
+      </Row>
+      {mode === 'lattice' && (
+        <>
+          <Row label="Pattern">
+            <Select value={lat.pattern} options={[['dots', 'Dots'], ['lines', 'Lines'], ['grid', 'Grid'], ['hex', 'Hex']]}
+              onCommit={v => editLattice(f => { f.pattern = v as typeof f.pattern })} />
+          </Row>
+          <Row label="Spacing (mm)"><NumInput value={lat.spacing} step={0.5} onCommit={v => editLattice(f => { f.spacing = v })} /></Row>
+          <Row label="Line width"><NumInput value={lat.lineWidth ?? 1.2} step={0.1} onCommit={v => editLattice(f => { f.lineWidth = v })} /></Row>
+          <Row label="Border (mm)"><NumInput value={lat.border ?? 2.5} step={0.5} onCommit={v => editLattice(f => { f.border = v })} /></Row>
+        </>
+      )}
+    </Section>
+  )
+}
+
+// Width/height helper — circle is width=height=diameter.
+const outlineDims = (o: Outline): { width: number; height: number } =>
+  o.type === 'circle' ? { width: o.diameter, height: o.diameter } : { width: o.width, height: o.height }
+
 const DocumentInspector: React.FC<{ doc: DocumentV2; applyEdit: ApplyEdit }> = ({ doc, applyEdit }) => {
   const outline = doc.object.outline
+  const dims = outlineDims(outline)
+  const fill = doc.object.fill
   return (
     <div>
       <Section title="Document">
@@ -381,25 +517,40 @@ const DocumentInspector: React.FC<{ doc: DocumentV2; applyEdit: ApplyEdit }> = (
         <Row label="ID"><ReadOnly value={doc.meta.id} /></Row>
       </Section>
 
-      <Section title="Object">
-        <Row label="Outline">
-          <Select value={outline.type} options={[['rect', 'Rectangle'], ['rounded-rect', 'Rounded rect'], ['path', 'SVG path']]}
+      <Section title="Outline">
+        <Row label="Shape">
+          <Select value={outline.type} options={[['rect', 'Rectangle'], ['rounded-rect', 'Rounded rect'], ['circle', 'Circle'], ['path', 'SVG path']]}
             onCommit={v => applyEdit(d => {
               const o = d.object.outline
-              if (v === 'rect') d.object.outline = { type: 'rect', width: o.width, height: o.height }
-              else if (v === 'rounded-rect') d.object.outline = { type: 'rounded-rect', width: o.width, height: o.height, radius: o.type === 'rounded-rect' ? o.radius : 4 }
-              else d.object.outline = { type: 'path', svgPath: o.type === 'path' ? o.svgPath : '', width: o.width, height: o.height }
+              const { width, height } = outlineDims(o)
+              if (v === 'rect') d.object.outline = { type: 'rect', width, height }
+              else if (v === 'rounded-rect') d.object.outline = { type: 'rounded-rect', width, height, radius: o.type === 'rounded-rect' ? o.radius : 4 }
+              else if (v === 'circle') d.object.outline = { type: 'circle', diameter: o.type === 'circle' ? o.diameter : (Math.min(width, height) || 40) }
+              else d.object.outline = { type: 'path', svgPath: o.type === 'path' ? o.svgPath : '', width, height }
             })} />
         </Row>
-        <Row label="Width (mm)"><NumInput value={outline.width} step={1} onCommit={v => applyEdit(d => { d.object.outline.width = v })} /></Row>
-        <Row label="Height (mm)"><NumInput value={outline.height} step={1} onCommit={v => applyEdit(d => { d.object.outline.height = v })} /></Row>
-        {outline.type === 'rounded-rect' && (
-          <Row label="Radius (mm)">
-            <NumInput value={outline.radius} step={0.5} onCommit={v => applyEdit(d => {
-              if (d.object.outline.type === 'rounded-rect') d.object.outline.radius = v
+
+        {outline.type === 'circle' ? (
+          <Row label="Diameter (mm)">
+            <NumInput value={outline.diameter} step={1} onCommit={v => applyEdit(d => {
+              if (d.object.outline.type === 'circle') d.object.outline.diameter = v
             })} />
           </Row>
+        ) : (
+          <>
+            <Row label="Width (mm)"><NumInput value={dims.width} step={1} onCommit={v => applyEdit(d => {
+              const o = d.object.outline
+              if (o.type !== 'circle') o.width = v
+            })} /></Row>
+            <Row label="Height (mm)"><NumInput value={dims.height} step={1} onCommit={v => applyEdit(d => {
+              const o = d.object.outline
+              if (o.type !== 'circle') o.height = v
+            })} /></Row>
+          </>
         )}
+
+        {outline.type === 'rounded-rect' && <CornerRadiusEditor outline={outline} applyEdit={applyEdit} />}
+
         {outline.type === 'path' && (
           <Row label="SVG path" vertical>
             <TextArea value={outline.svgPath} rows={3} onCommit={v => applyEdit(d => {
@@ -407,8 +558,13 @@ const DocumentInspector: React.FC<{ doc: DocumentV2; applyEdit: ApplyEdit }> = (
             })} />
           </Row>
         )}
+      </Section>
+
+      <Section title="Thickness">
         <Row label="Thickness"><NumInput value={doc.object.thickness} step={0.1} onCommit={v => applyEdit(d => { d.object.thickness = v })} /></Row>
       </Section>
+
+      <FillEditor fill={fill} applyEdit={applyEdit} />
 
       <Section title="Variables">
         <StringMapEditor
@@ -603,7 +759,7 @@ const TextArea: React.FC<{ value: string; rows?: number; placeholder?: string; o
   )
 }
 
-const NumInput: React.FC<{ value: number; step?: number; min?: number; max?: number; onCommit: (v: number) => void }> = ({ value, step, min, max, onCommit }) => (
+const NumInput: React.FC<{ value: number; step?: number; min?: number; max?: number; placeholder?: string; onCommit: (v: number) => void }> = ({ value, step, min, max, placeholder, onCommit }) => (
   <input
     type="number"
     style={{ ...inputStyle, maxWidth: 90 }}
@@ -611,6 +767,7 @@ const NumInput: React.FC<{ value: number; step?: number; min?: number; max?: num
     step={step}
     min={min}
     max={max}
+    placeholder={placeholder}
     onChange={e => {
       const n = e.target.valueAsNumber
       if (!Number.isNaN(n)) onCommit(n)
@@ -624,7 +781,7 @@ const Select: React.FC<{ value: string; options: Array<[string, string]>; onComm
   </select>
 )
 
-const MaterialSelect: React.FC<{ materials: Material[]; value: string; allowEmpty?: boolean; onCommit: (v: string) => void }> = ({ materials, value, allowEmpty, onCommit }) => (
+const MaterialSelect: React.FC<{ materials: Material[]; value: string; allowEmpty?: boolean; emptyLabel?: string; onCommit: (v: string) => void }> = ({ materials, value, allowEmpty, emptyLabel, onCommit }) => (
   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
     <span style={{
       width: 12, height: 12, borderRadius: 2, flexShrink: 0,
@@ -632,7 +789,7 @@ const MaterialSelect: React.FC<{ materials: Material[]; value: string; allowEmpt
       border: '1px solid #30363d',
     }} />
     <select value={value} onChange={e => onCommit(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-      {allowEmpty && <option value="">(none)</option>}
+      {allowEmpty && <option value="">{emptyLabel ?? '(none)'}</option>}
       {materials.map(m => <option key={m.id} value={m.id}>{m.name} ({m.id})</option>)}
     </select>
   </div>

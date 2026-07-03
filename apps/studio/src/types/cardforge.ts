@@ -3,14 +3,25 @@
 // Units: mm. Origin: top-left of the object, y down.
 // `material` on a feature references materials[].id.
 
+export type Outline =
+  | { type: 'rect'; width: number; height: number }
+  | { type: 'rounded-rect'; width: number; height: number; radius: number; corners?: { tl?: number; tr?: number; br?: number; bl?: number } }
+  | { type: 'circle'; diameter: number }
+  | { type: 'path'; svgPath: string; width: number; height: number }
+
+export type Fill =
+  | { type: 'solid' }
+  | { type: 'lattice'; pattern: 'dots' | 'lines' | 'grid' | 'hex'; spacing: number; lineWidth?: number; border?: number }
+
+export interface Backing { mode: 'auto' | 'on' | 'off'; thickness?: number; material?: string }
+
 export interface DocumentV2 {
   cardforge: '2.0'
   meta: { id: string; name: string; description?: string; created?: string; modified?: string }
   object: {
-    outline: { type: 'rect'; width: number; height: number }
-           | { type: 'rounded-rect'; width: number; height: number; radius: number }
-           | { type: 'path'; svgPath: string; width: number; height: number }
+    outline: Outline
     thickness: number
+    fill?: Fill
   }
   materials: Material[]
   variables?: Record<string, string>
@@ -23,7 +34,7 @@ export interface Face { features: Feature[] }
 export type ReliefMode = 'emboss'|'deboss'|'flush'|'cut'|'deboss-backed'
 export interface Relief { mode: ReliefMode; height?: number; depth?: number; floorMaterial?: string; floorThickness?: number }
 export interface FontSpec { family: string; size: number; weight?: number; italic?: boolean; axes?: Record<string, number> }
-export interface FeatureBase { id: string; type: string; name?: string; transform: { x: number; y: number; rotation?: number; scale?: number }; material: string; relief: Relief; zOrder?: number; visible?: boolean }
+export interface FeatureBase { id: string; type: string; name?: string; transform: { x: number; y: number; rotation?: number; scale?: number }; material: string; relief: Relief; zOrder?: number; visible?: boolean; backing?: Backing }
 export interface TextBlockFeature extends FeatureBase { type: 'text-block'; lines: string[]; font: FontSpec; align?: 'left'|'center'|'right'; lineHeight?: number }
 export interface TextPatternFeature extends FeatureBase { type: 'text-pattern'; text: string; font: FontSpec; spacing: number; angle?: number }
 export interface PatternFeature extends FeatureBase { type: 'pattern'; patternType: 'dots'|'lines'|'grid'|'hex'; spacing: number; angle?: number; elementSize?: number; region?: 'face'|'bounds'; width?: number; height?: number }

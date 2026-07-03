@@ -3,9 +3,15 @@
 // Document: top-left origin, mm units, card bounds 0..w, 0..h
 // Screen: top-left origin, px units, zoom applied
 
-import type { Feature } from '../../types/cardforge'
+import type { Feature, Outline } from '../../types/cardforge'
 
 export const PX_PER_MM = 4
+
+/** Outline dimensions in mm. Circle is width=height=diameter. */
+export function outlineSize(outline: Outline): { width: number; height: number } {
+  if (outline.type === 'circle') return { width: outline.diameter, height: outline.diameter }
+  return { width: outline.width, height: outline.height }
+}
 
 export interface CanvasViewport {
   zoom: number

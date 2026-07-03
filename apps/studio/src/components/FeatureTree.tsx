@@ -27,6 +27,7 @@ export const FeatureTree: React.FC = () => {
   const tab = useDocumentStore(getActiveTab)
   const applyEdit = useDocumentStore(s => s.applyEdit)
   const select = useDocumentStore(s => s.select)
+  const selectObject = useDocumentStore(s => s.selectObject)
   const toggleSelect = useDocumentStore(s => s.toggleSelect)
   const setActiveFace = useDocumentStore(s => s.setActiveFace)
   const [addMenuOpen, setAddMenuOpen] = useState(false)
@@ -101,6 +102,24 @@ export const FeatureTree: React.FC = () => {
           ))}
         </div>
       )}
+
+      {/* Base object node */}
+      <div
+        onClick={() => selectObject()}
+        title="Edit the base card (outline, thickness, fill)"
+        style={{
+          display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px',
+          cursor: 'pointer',
+          background: tab.objectSelected ? 'rgba(88,166,255,0.15)' : 'transparent',
+          borderLeft: tab.objectSelected ? '2px solid #58a6ff' : '2px solid transparent',
+          color: tab.objectSelected ? '#58a6ff' : '#c9d1d9',
+          fontWeight: tab.objectSelected ? 600 : 400,
+        }}
+      >
+        <span style={{ width: 14, textAlign: 'center', flexShrink: 0 }}>◼</span>
+        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Object</span>
+        <span style={{ fontSize: 10, color: '#484f58' }}>{doc.object.outline.type}</span>
+      </div>
 
       {/* Faces */}
       {(['front', 'back'] as const).map(face => {

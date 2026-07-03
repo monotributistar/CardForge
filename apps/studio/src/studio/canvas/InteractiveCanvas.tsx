@@ -5,13 +5,12 @@
 // Edits (drag-to-move) are routed through DocumentStore.applyEdit.
 
 import React, { useRef, useState, useCallback, useEffect } from 'react'
-import type { DocumentV2, Feature } from '../../types/cardforge'
+import type { Feature, Outline, Fill } from '../../types/cardforge'
 
-type Outline = DocumentV2['object']['outline']
 import { useDocumentStore, getActiveTab, findFeature } from '../../state/DocumentStore'
 import { useCompileStore } from '../../state/CompileStore'
 import {
-  PX_PER_MM, documentToScreen, screenToDocument, getFeatureBoundsMm,
+  PX_PER_MM, documentToScreen, screenToDocument, getFeatureBoundsMm, outlineSize,
   type CanvasViewport, type BoundsMm,
 } from './CanvasCoords'
 import { SelectionHandles } from './handles'
@@ -31,6 +30,7 @@ export const InteractiveCanvas: React.FC = () => {
   const tab = useDocumentStore(getActiveTab)
   const applyEdit = useDocumentStore(s => s.applyEdit)
   const select = useDocumentStore(s => s.select)
+  const selectObject = useDocumentStore(s => s.selectObject)
   const toggleSelect = useDocumentStore(s => s.toggleSelect)
   const setActiveFace = useDocumentStore(s => s.setActiveFace)
   const constraints = useCompileStore(s => s.constraints)
@@ -55,11 +55,13 @@ export const InteractiveCanvas: React.FC = () => {
   const doc = tab?.doc ?? null
   const activeFace = tab?.activeFace ?? 'front'
   const outline = doc?.object.outline
-  const cardW = outline?.width ?? 85
-  const cardH = outline?.height ?? 54
+  const size = outline ? outlineSize(outline) : { width: 85, height: 54 }
+  const cardW = size.width
+  const cardH = size.height
   const features: Feature[] = doc?.faces[activeFace]?.features ?? []
   const selectedIds = tab?.selectedFeatureIds ?? []
   const primaryId = tab?.selectedFeatureId ?? null
+  const objectSelected = tab?.objectSelected ?? false
 
   const materialColor = useCallback((id: string): string =>
     doc?.materials.find(m => m.id === id)?.color ?? '#8b949e', [doc])
@@ -267,15 +269,19 @@ export const InteractiveCanvas: React.FC = () => {
                 <line x1="0" y1="0" x2="0" y2="2" stroke={materialColor(f.material)} strokeWidth="0.5" opacity="0.3" />
               </pattern>
             ))}
+            <LatticeHintPattern fill={doc.object.fill} />
           </defs>
 
-          {/* Object outline */}
-          <ObjectOutline outline={doc.object.outline} />
+          {/* Object outline (click selects the base object) */}
+          <g onPointerDown={e => { e.stopPropagation(); selectObject() }} style={{ cursor: 'pointer' }}>
+            <ObjectOutline outline={doc.object.outline} fill={doc.object.fill} selected={objectSelected} />
+          </g>
           {/* Safe margin (1mm inset, dashed) */}
           <rect
             x={1} y={1} width={cardW - 2} height={cardH - 2}
             rx={doc.object.outline.type === 'rounded-rect' ? Math.max(0, doc.object.outline.radius - 1) : 0}
             fill="none" stroke="#30363d" strokeWidth={0.2} strokeDasharray="1.5 1.5"
+            pointerEvents="none"
           />
 
           {/* Features */}
@@ -311,6 +317,12 @@ export const InteractiveCanvas: React.FC = () => {
                     x={b.x + b.w - 0.4} y={b.y + 2} fontSize={2}
                     textAnchor="end" fill="#8b949e" style={{ userSelect: 'none' }}
                   >{RELIEF_BADGES[f.relief.mode] ?? ''}</text>
+                  {/* Backing pad badge */}
+                  {(f.backing?.mode === 'on' || (f.backing?.mode !== 'off' && doc.object.fill?.type === 'lattice')) && (
+                    <text x={b.x + 0.4} y={b.y + 2} fontSize={2} textAnchor="start" fill="#8b949e" style={{ userSelect: 'none' }}>
+                      <title>Backing pad</title>▤
+                    </text>
+                  )}
                   {/* Material chip (8px at 100%) */}
                   <rect x={b.x} y={b.y + b.h + 0.5} width={2} height={2} fill={color} stroke="#30363d" strokeWidth={0.1} />
                   {/* Scale / rotate handles on the primary selection */}
@@ -340,20 +352,104 @@ export const InteractiveCanvas: React.FC = () => {
 
 // ── Outline ──────────────────────────────────────────────────────────
 
-const ObjectOutline: React.FC<{ outline: Outline }> = ({ outline }) => {
-  const common = { fill: '#161b22', stroke: '#484f58', strokeWidth: 0.3 }
+/** Build an SVG path for a rounded rect with independent per-corner radii.
+ *  A radius of 0 renders a square corner. */
+function roundedRectPath(w: number, h: number, r: { tl: number; tr: number; br: number; bl: number }): string {
+  const clamp = (v: number) => Math.max(0, Math.min(v, w / 2, h / 2))
+  const tl = clamp(r.tl), tr = clamp(r.tr), br = clamp(r.br), bl = clamp(r.bl)
+  return [
+    `M ${tl} 0`,
+    `H ${w - tr}`,
+    tr > 0 ? `A ${tr} ${tr} 0 0 1 ${w} ${tr}` : `L ${w} 0`,
+    `V ${h - br}`,
+    br > 0 ? `A ${br} ${br} 0 0 1 ${w - br} ${h}` : `L ${w} ${h}`,
+    `H ${bl}`,
+    bl > 0 ? `A ${bl} ${bl} 0 0 1 0 ${h - bl}` : `L 0 ${h}`,
+    `V ${tl}`,
+    tl > 0 ? `A ${tl} ${tl} 0 0 1 ${tl} 0` : `L 0 0`,
+    'Z',
+  ].join(' ')
+}
+
+const LATTICE_HINT_ID = 'lattice-hint'
+
+/** A faint <pattern> hinting a non-solid (lattice) base fill. */
+const LatticeHintPattern: React.FC<{ fill: Fill | undefined }> = ({ fill }) => {
+  if (fill?.type !== 'lattice') return null
+  const s = Math.max(1, fill.spacing)
+  const lw = fill.lineWidth ?? 1.2
+  const stroke = '#8b949e'
+  const content = fill.pattern === 'dots'
+    ? <circle cx={s / 2} cy={s / 2} r={Math.max(0.3, lw / 2)} fill={stroke} />
+    : fill.pattern === 'lines'
+      ? <line x1={0} y1={s / 2} x2={s} y2={s / 2} stroke={stroke} strokeWidth={lw} />
+      : fill.pattern === 'hex'
+        ? <path d={`M0 ${s / 2} L${s / 2} 0 L${s} ${s / 2} L${s / 2} ${s} Z`} fill="none" stroke={stroke} strokeWidth={lw * 0.6} />
+        : ( // grid
+          <>
+            <line x1={0} y1={0} x2={0} y2={s} stroke={stroke} strokeWidth={lw * 0.6} />
+            <line x1={0} y1={0} x2={s} y2={0} stroke={stroke} strokeWidth={lw * 0.6} />
+          </>
+        )
+  return (
+    <pattern id={LATTICE_HINT_ID} width={s} height={s} patternUnits="userSpaceOnUse" opacity={0.15}>
+      {content}
+    </pattern>
+  )
+}
+
+const ObjectOutline: React.FC<{ outline: Outline; fill: Fill | undefined; selected: boolean }> = ({ outline, fill, selected }) => {
+  const stroke = selected ? '#58a6ff' : '#484f58'
+  const strokeWidth = selected ? 0.6 : 0.3
+  const common = { fill: '#161b22', stroke, strokeWidth }
+  const isLattice = fill?.type === 'lattice'
+  const hint = isLattice ? `url(#${LATTICE_HINT_ID})` : undefined
+
+  if (outline.type === 'circle') {
+    const r = outline.diameter / 2
+    return (
+      <g>
+        <circle cx={r} cy={r} r={r} {...common} />
+        {isLattice && <circle cx={r} cy={r} r={r} fill={hint} stroke="none" />}
+      </g>
+    )
+  }
   if (outline.type === 'rounded-rect') {
-    return <rect x={0} y={0} width={outline.width} height={outline.height} rx={outline.radius} {...common} />
+    const c = outline.corners
+    if (c) {
+      const d = roundedRectPath(outline.width, outline.height, {
+        tl: c.tl ?? outline.radius, tr: c.tr ?? outline.radius,
+        br: c.br ?? outline.radius, bl: c.bl ?? outline.radius,
+      })
+      return (
+        <g>
+          <path d={d} {...common} />
+          {isLattice && <path d={d} fill={hint} stroke="none" />}
+        </g>
+      )
+    }
+    return (
+      <g>
+        <rect x={0} y={0} width={outline.width} height={outline.height} rx={outline.radius} {...common} />
+        {isLattice && <rect x={0} y={0} width={outline.width} height={outline.height} rx={outline.radius} fill={hint} stroke="none" />}
+      </g>
+    )
   }
   if (outline.type === 'path') {
     return (
       <g>
         <rect x={0} y={0} width={outline.width} height={outline.height} fill="none" stroke="#30363d" strokeWidth={0.15} strokeDasharray="1 1" />
         <path d={outline.svgPath} {...common} />
+        {isLattice && <path d={outline.svgPath} fill={hint} stroke="none" />}
       </g>
     )
   }
-  return <rect x={0} y={0} width={outline.width} height={outline.height} {...common} />
+  return (
+    <g>
+      <rect x={0} y={0} width={outline.width} height={outline.height} {...common} />
+      {isLattice && <rect x={0} y={0} width={outline.width} height={outline.height} fill={hint} stroke="none" />}
+    </g>
+  )
 }
 
 // ── Per-type glyphs ──────────────────────────────────────────────────

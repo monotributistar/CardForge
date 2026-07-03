@@ -22,6 +22,8 @@ export interface TabState {
   selectedFeatureIds: string[]
   /** Primary selection (= last selected). Kept in sync with selectedFeatureIds. */
   selectedFeatureId: string | null
+  /** True when the base object (not a feature) is the current selection. */
+  objectSelected: boolean
   activeFace: FaceId
 }
 
@@ -41,6 +43,8 @@ export interface DocumentStoreState {
   redo: () => void
   /** Replace the selection with a single feature (or clear it). */
   select: (featureId: string | null) => void
+  /** Select the base object; clears any feature selection. */
+  selectObject: () => void
   /** Toggle a feature's membership in the multi-selection. */
   toggleSelect: (featureId: string) => void
   setActiveFace: (face: FaceId) => void
@@ -63,6 +67,7 @@ function makeTab(doc: DocumentV2, fileName: string | null = null, fileHandle: Fi
     redo: [],
     selectedFeatureIds: [],
     selectedFeatureId: null,
+    objectSelected: true,
     activeFace: 'front',
   }
 }
@@ -148,6 +153,16 @@ export const useDocumentStore = create<DocumentStoreState>((set, get) => {
         ...tab,
         selectedFeatureIds: featureId ? [featureId] : [],
         selectedFeatureId: featureId || null,
+        objectSelected: false,
+      }))
+    },
+
+    selectObject: () => {
+      updateActiveTab(tab => ({
+        ...tab,
+        selectedFeatureIds: [],
+        selectedFeatureId: null,
+        objectSelected: true,
       }))
     },
 
@@ -156,7 +171,7 @@ export const useDocumentStore = create<DocumentStoreState>((set, get) => {
         const ids = tab.selectedFeatureIds.includes(featureId)
           ? tab.selectedFeatureIds.filter(id => id !== featureId)
           : [...tab.selectedFeatureIds, featureId]
-        return { ...tab, selectedFeatureIds: ids, selectedFeatureId: ids[ids.length - 1] ?? null }
+        return { ...tab, selectedFeatureIds: ids, selectedFeatureId: ids[ids.length - 1] ?? null, objectSelected: false }
       })
     },
 
