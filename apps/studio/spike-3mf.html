@@ -9,8 +9,9 @@
   const log = (...a) => console.log('[SPIKE]', ...a)
 
   try {
+    const file = new URLSearchParams(location.search).get('file') || '/spike.3mf'
     const loader = new ThreeMFLoader()
-    loader.load('/spike.3mf', (object) => {
+    loader.load(file, (object) => {
       const meshes = []
       object.traverse((child) => { if (child.isMesh) meshes.push(child) })
       const colors = meshes.map(m => {
@@ -26,19 +27,25 @@
       log(ok ? 'SPIKE-6B-PASS' : 'SPIKE-6B-FAIL')
       document.title = ok ? 'SPIKE OK' : 'SPIKE FAIL'
 
-      // Render it so a screenshot shows both colors
+      // Render it so a screenshot shows both colors — camera fit to bbox
       const scene = new THREE.Scene()
-      scene.background = new THREE.Color(0x111111)
-      const cam = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 500)
-      cam.position.set(25, -35, 30); cam.lookAt(0, 0, 0)
+      scene.background = new THREE.Color(0x3a4a5a)
+      const bbox = new THREE.Box3().setFromObject(object)
+      const center = bbox.getCenter(new THREE.Vector3())
+      const size = bbox.getSize(new THREE.Vector3())
+      const dist = Math.max(size.x, size.y, size.z) * 1.2
+      const vw = innerWidth || 1280, vh = innerHeight || 800
+      const cam = new THREE.PerspectiveCamera(40, vw / vh, 0.1, 2000)
+      cam.position.set(center.x + dist * 0.4, center.y - dist * 0.8, center.z + dist * 0.7)
+      cam.lookAt(center)
       scene.add(new THREE.AmbientLight(0xffffff, 0.7))
       const dir = new THREE.DirectionalLight(0xffffff, 1.2); dir.position.set(30, -20, 50)
       scene.add(dir)
       scene.add(object)
-      const renderer = new THREE.WebGLRenderer({ antialias: true })
-      renderer.setSize(innerWidth, innerHeight)
+      const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true })
+      renderer.setSize(vw, vh)
       document.body.appendChild(renderer.domElement)
-      renderer.render(scene, cam)
+      renderer.setAnimationLoop(() => renderer.render(scene, cam))
     }, undefined, (err) => { log('SPIKE-6B-FAIL load error', err?.message || err); document.title = 'SPIKE FAIL' })
   } catch (e) {
     log('SPIKE-6B-FAIL exception', e.message)

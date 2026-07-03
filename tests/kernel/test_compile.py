@@ -24,9 +24,9 @@ RECT_AREA = W * H  # plain rect outline → exact analytic base volume
 
 def make_doc(front=(), back=(), materials=None, thickness=T):
     mats = materials or [
-        {"id": "base", "name": "Base", "color": "#1a1a1a", "role": "base"},
-        {"id": "text", "name": "Text", "color": "#ffffff", "role": "text"},
-        {"id": "accent", "name": "Accent", "color": "#d4af37", "role": "accent"},
+        {"id": "base", "name": "Base", "color": "#1a1a1a", "role": "base", "slot": 1},
+        {"id": "text", "name": "Text", "color": "#ffffff", "role": "text", "slot": 2},
+        {"id": "accent", "name": "Accent", "color": "#d4af37", "role": "accent", "slot": 3},
     ]
     return DocumentV2.from_dict({
         "cardforge": "2.0",
