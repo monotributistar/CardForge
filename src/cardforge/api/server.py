@@ -1,17 +1,29 @@
-"""CardForge Core API server — FastAPI HTTP interface to the Core Compiler."""
+"""CardForge Core API v2 — in-process compile/export over the geometry kernel.
+
+POST /api/compile  {document}            → 3MF (base64) + constraints + stats.
+                   The returned bytes ARE the export — the Studio preview and
+                   the saved file are byte-identical by construction.
+POST /api/export   {document, formats}   → zip with 3MF + per-material STLs
+                   + manufacturing report.
+GET  /api/health
+"""
+
+from __future__ import annotations
+
+import base64
+import io
+import json
+import zipfile
+from datetime import datetime
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
-import uuid
-import json
-import shutil
-from pathlib import Path
-from typing import Optional
-from datetime import datetime
+from fastapi.responses import JSONResponse, Response
 
-app = FastAPI(title="CardForge Core API", version="0.1.0")
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+
+app = FastAPI(title="CardForge Core API", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -20,260 +32,158 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Storage ──────────────────────────────────────────────────────────
-EXPORTS_DIR = Path("exports/api")
-EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
-_jobs: dict = {}
+
+def _error(status: int, message: str, **extra):
+    return JSONResponse(status_code=status,
+                        content={"ok": False, "error": message, **extra})
+
+
+def _load_document(doc_data: dict):
+    """Raw dict (v1 or v2) → resolved DocumentV2. Raises on invalid input."""
+    from cardforge.document.migrate import detect_version, migrate_v1_to_v2
+    from cardforge.document.schema_v2 import DocumentV2
+    from cardforge.document.variables import resolve_variables
+
+    version = detect_version(doc_data)
+    if version == "1":
+        doc_data = migrate_v1_to_v2(doc_data)
+    elif version != "2":
+        raise ValueError("Not a CardForge document (v1 or v2)")
+    return DocumentV2.from_dict(resolve_variables(doc_data))
+
+
+def _compile(doc):
+    from cardforge.kernel.compile import compile_document
+    from cardforge.kernel.constraints import check_constraints
+
+    scene, trace = compile_document(doc, asset_root=PROJECT_ROOT)
+    issues = check_constraints(doc, trace)
+    return scene, trace, issues
+
+
+def _issues_json(issues):
+    return [
+        {"severity": i.severity.value, "code": i.code, "message": i.message,
+         "featureId": i.feature_id, "faceId": i.face_id}
+        for i in issues
+    ]
+
+
+def _report_json(report):
+    return {
+        "score": report.score,
+        "scoreLabel": report.score_label,
+        "isManufacturable": report.is_manufacturable,
+        "errorCount": len(report.errors),
+        "warningCount": len(report.warnings),
+        "issues": [
+            {"code": i.code.value, "severity": i.severity.value,
+             "message": i.message, "featureId": i.node_id,
+             "suggestion": i.suggestion}
+            for i in report.issues
+        ],
+    }
 
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "version": "0.1.0", "timestamp": datetime.now().isoformat()}
+    return {"ok": True, "version": "2.0.0",
+            "timestamp": datetime.now().isoformat()}
 
 
-@app.post("/api/preview")
-def api_preview(body: dict):
-    """Generate SVG preview + manufacturing report from a document."""
+@app.post("/api/compile")
+def api_compile(body: dict):
+    """Compile a document for live preview. Fast path — no files touched."""
+    from cardforge.document.schema_v2 import DocumentValidationError
+    from cardforge.export.threemf import scene_to_3mf
+    from cardforge.manufacturing.analyzer import ManufacturingAnalyzer, profile_by_name
+
     try:
-        doc_data = body.get("document", {})
-        profile_name = body.get("profile", "fdm-standard")
+        doc = _load_document(body.get("document") or {})
+    except DocumentValidationError as e:
+        return _error(422, "Document invalid", details=e.errors[:20])
+    except (ValueError, KeyError, TypeError) as e:
+        return _error(400, str(e))
 
-        # Resolve document and adapt to legacy config
-        from cardforge.document.model import CardForgeDocument
-        from cardforge.document.adapter import resolve_document_variables, adapt_to_legacy_config
-        from cardforge.domain.factory import create_card_from_config
-        from cardforge.geometry_ir.builder import GeometryBuilder
-        from cardforge.geometry_ir.svg_visitor import SVGVisitor
-        from cardforge.manufacturing.profiles import ManufacturingProfile
-        from cardforge.manufacturing.analyzer import ManufacturingAnalyzer
-
-        doc = CardForgeDocument.from_dict(doc_data)
-        doc = resolve_document_variables(doc)
-        config = adapt_to_legacy_config(doc)
-        card = create_card_from_config(config)
-        builder = GeometryBuilder()
-        geometry_doc = builder.build(card)
-
-        # SVG previews
-        front_visitor = SVGVisitor(face_id="front")
-        back_visitor = SVGVisitor(face_id="back")
-        front_svg = front_visitor.render(geometry_doc)
-        back_svg = back_visitor.render(geometry_doc)
-
-        # Manufacturing analysis
-        profile = ManufacturingProfile.fdm_standard()
-        analyzer = ManufacturingAnalyzer(profile)
-        report = analyzer.analyze(geometry_doc)
-
-        return {
-            "ok": True,
-            "preview": {"frontSvg": front_svg, "backSvg": back_svg},
-            "manufacturing": {
-                "score": report.score,
-                "scoreLabel": report.score_label,
-                "isManufacturable": report.is_manufacturable,
-                "errorCount": len(report.errors),
-                "warningCount": len(report.warnings),
-                "warnings": [{"code": i.code.value, "message": i.message, "suggestion": i.suggestion} for i in report.warnings],
-                "errors": [{"code": i.code.value, "message": i.message} for i in report.errors],
-                "suggestions": report.suggestions,
-            },
-        }
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
-
-
-@app.post("/api/manufacture")
-def api_manufacture(body: dict):
-    """Full manufacture: generate STL + parts + reports + manifest."""
     try:
-        doc_data = body.get("document", {})
-        options = body.get("options", {})
+        scene, trace, issues = _compile(doc)
+        threemf = scene_to_3mf(scene, doc.materials, title=doc.meta.name)
+        profile = profile_by_name(body.get("profile")
+                                  or doc.manufacturing.profile)
+        report = ManufacturingAnalyzer(profile).analyze(doc, scene, trace)
+    except Exception as e:  # compile errors are server-side bugs → 500
+        return _error(500, f"Compile failed: {e}")
 
-        job_id = str(uuid.uuid4())[:8]
-        job_dir = EXPORTS_DIR / job_id
-        job_dir.mkdir(parents=True)
+    vols = scene.non_empty()
+    return {
+        "ok": True,
+        "model3mfBase64": base64.b64encode(threemf).decode(),
+        "constraints": _issues_json(issues),
+        "warnings": trace.warnings,
+        "skippedFeatures": trace.skipped,
+        "manufacturing": _report_json(report),
+        "stats": {
+            "compileMs": round(trace.elapsed_ms, 1),
+            "featureCount": len(trace.records),
+            "threeMfBytes": len(threemf),
+        },
+        "materials": [
+            {"id": m.id, "name": m.name, "color": m.color, "slot": m.slot,
+             "role": m.role, "present": m.id in vols,
+             "volumeMm3": round(vols[m.id].volume(), 2) if m.id in vols else 0.0}
+            for m in doc.materials
+        ],
+    }
 
-        _jobs[job_id] = {"status": "running", "progress": 0, "steps": []}
 
-        # Save document
-        doc_path = job_dir / "document.cardforge.json"
-        doc_path.write_text(json.dumps(doc_data))
+@app.post("/api/export")
+def api_export(body: dict):
+    """Full export: zip with 3MF + per-material STLs + manufacturing report."""
+    from cardforge.document.schema_v2 import DocumentValidationError
+    from cardforge.export.stl import scene_to_stls
+    from cardforge.export.threemf import scene_to_3mf
+    from cardforge.kernel.types import Severity
+    from cardforge.manufacturing.analyzer import ManufacturingAnalyzer, profile_by_name
 
-        # Run Core CLI
-        import subprocess, sys
-        project_root = Path(__file__).resolve().parent.parent.parent.parent
-        cli = project_root / "scripts" / "core_cli.py"
+    try:
+        doc = _load_document(body.get("document") or {})
+    except DocumentValidationError as e:
+        return _error(422, "Document invalid", details=e.errors[:20])
+    except (ValueError, KeyError, TypeError) as e:
+        return _error(400, str(e))
 
-        _jobs[job_id]["steps"].append({"name": "preview", "status": "running"})
-        result = subprocess.run(
-            [sys.executable, str(cli), "preview", str(doc_path)],
-            capture_output=True, text=True, timeout=120, cwd=str(project_root),
-        )
-        _jobs[job_id]["steps"][-1]["status"] = "done" if result.returncode == 0 else "failed"
+    formats = body.get("formats") or ["3mf", "stl"]
+    ignore_errors = bool(body.get("ignoreErrors"))
 
-        if result.returncode != 0:
-            _jobs[job_id]["status"] = "failed"
-            detail = (result.stderr or result.stdout or "")[:1000]
-            _jobs[job_id]["error"] = detail
-            return {
-                "ok": False, "error": "Preview failed",
-                "returncode": result.returncode,
-                "python": sys.executable,
-                "stderr": result.stderr[:1000],
-                "stdout": result.stdout[:1000],
-            }
+    try:
+        scene, trace, issues = _compile(doc)
+        errors = [i for i in issues if i.severity == Severity.ERROR]
+        profile = profile_by_name(body.get("profile") or doc.manufacturing.profile)
+        report = ManufacturingAnalyzer(profile).analyze(doc, scene, trace)
 
-        try:
-            preview_result = json.loads(result.stdout)
-        except json.JSONDecodeError:
-            preview_result = {"manufacturing": {"score": 0, "scoreLabel": "?"}}
+        if (errors or report.has_errors) and not ignore_errors:
+            return _error(
+                409, "Document has blocking errors; pass ignoreErrors to override",
+                constraints=_issues_json(errors),
+                manufacturing=_report_json(report))
 
-        # Run legacy build for STL generation
-        _jobs[job_id]["steps"].append({"name": "stl", "status": "running"})
-        build_script = project_root / "scripts" / "build.py"
-        do_stl = options.get("singleStl", True)
-        do_parts = options.get("parts", True)
-
-        # Use a temp file for the build script input
-        legacy_config = _adapt_doc_to_legacy_config(doc_data)
-        config_path = job_dir / "_config.json"
-        config_path.write_text(json.dumps(legacy_config))
-
-        cmd = [sys.executable, str(build_script), str(config_path), "--clean"]
-        if do_stl:
-            cmd.append("--stl")
-        if do_parts:
-            cmd.append("--parts")
-
-        build_result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=300, cwd=str(project_root),
-        )
-        _jobs[job_id]["steps"][-1]["status"] = "done" if build_result.returncode == 0 else "failed"
-
-        if build_result.returncode != 0:
-            _jobs[job_id]["status"] = "failed"
-            _jobs[job_id]["error"] = build_result.stderr[:500]
-            return {"ok": False, "error": "Build failed", "stderr": build_result.stderr[:500]}
-
-        # Find generated exports
-        mfg = preview_result.get("manufacturing", {})
-        project_name = legacy_config.get("project", {}).get("name", job_id)
-        safe_name = _sanitize(project_name)
-        export_root = project_root / "exports" / safe_name
-
-        # Copy files to job directory
-        stl_dir = job_dir / "stl"
-        stl_dir.mkdir(exist_ok=True)
-        parts_dir = job_dir / "stl" / "parts"
-        parts_dir.mkdir(exist_ok=True)
-
-        files = []
-        # Single STL
-        single_stl = export_root / "stl" / "card_single.stl"
-        if single_stl.exists():
-            shutil.copy2(single_stl, stl_dir / "card_single.stl")
-            files.append({"name": "stl/card_single.stl", "type": "stl", "url": f"/api/files/{job_id}/stl/card_single.stl"})
-
-        # Parts
-        parts_src = export_root / "stl" / "parts"
-        stl_parts = []
-        if parts_src.exists():
-            for f in sorted(parts_src.glob("*.stl")):
-                shutil.copy2(f, parts_dir / f.name)
-                files.append({"name": f"stl/parts/{f.name}", "type": "stl_part", "url": f"/api/files/{job_id}/stl/parts/{f.name}"})
-                stl_parts.append(f)
-
-        # Generate 3MF from STL parts
-        if stl_parts:
-            from cardforge.api.generate_3mf import generate_3mf
-            colors = {"base": "#3a3a3a", "pla": "#3a3a3a", "text": "#e0e0e0", "accent": "#d4af37"}
-            part_data = []
-            for f in stl_parts:
-                mat = "base"
-                name = f.stem
-                if "text" in name.lower() or "white" in name.lower():
-                    mat = "text"
-                elif "accent" in name.lower() or "gold" in name.lower():
-                    mat = "accent"
-                part_data.append({
-                    "name": name,
-                    "stl_path": str(f),
-                    "color_hex": colors.get(mat, "#808080"),
-                    "material_name": mat.upper(),
-                })
-            try:
-                mf3_path = generate_3mf(part_data, job_dir / "stl")
-                files.append({"name": "card.3mf", "type": "3mf", "url": f"/api/files/{job_id}/stl/card.3mf"})
-            except Exception as e:
-                # 3MF generation is best-effort, don't fail the whole build
-                pass
-
-        # Preview SVGs
-        preview_dir = job_dir / "preview"
-        preview_dir.mkdir(exist_ok=True)
-        preview_src = export_root / "preview"
-        if preview_src.exists():
-            for f in preview_src.glob("*.svg"):
-                shutil.copy2(f, preview_dir / f.name)
-                files.append({"name": f"preview/{f.name}", "type": "preview", "url": f"/api/files/{job_id}/preview/{f.name}"})
-
-        # Reports
-        reports_dir = job_dir / "reports"
-        reports_dir.mkdir(exist_ok=True)
-        reports_src = export_root / "reports"
-        if reports_src.exists():
-            for f in reports_src.glob("*"):
-                shutil.copy2(f, reports_dir / f.name)
-                files.append({"name": f"reports/{f.name}", "type": "report", "url": f"/api/files/{job_id}/reports/{f.name}"})
-
-        manifest = {
-            "document": project_name,
-            "version": "0.1.0",
-            "timestamp": datetime.now().isoformat(),
-            "profile": "fdm-standard",
-            "score": mfg.get("score", 0),
-            "scoreLabel": mfg.get("scoreLabel", "?"),
-            "manufacturable": mfg.get("isManufacturable", True),
-            "files": files,
-        }
-
-        _jobs[job_id] = {"status": "completed", "progress": 100, "steps": _jobs[job_id]["steps"], "manifest": manifest}
-        return {"ok": True, "jobId": job_id, "status": "completed", "package": {"manifest": manifest, "files": files}}
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            if "3mf" in formats:
+                zf.writestr(f"{doc.meta.id}.3mf",
+                            scene_to_3mf(scene, doc.materials, title=doc.meta.name))
+            if "stl" in formats:
+                for mid, data in scene_to_stls(scene, doc.materials).items():
+                    mat = doc.material_by_id(mid)
+                    slot = f"_slot{mat.slot}" if mat and mat.slot else ""
+                    zf.writestr(f"stl/{mid}{slot}.stl", data)
+            zf.writestr("manufacturing_report.json",
+                        json.dumps(_report_json(report), indent=2))
     except Exception as e:
-        job_id = job_id if 'job_id' in dir() else "unknown"
-        _jobs[job_id] = {"status": "failed", "error": str(e)}
-        return {"ok": False, "error": str(e)}
+        return _error(500, f"Export failed: {e}")
 
-
-@app.get("/api/jobs/{job_id}")
-def api_job(job_id: str):
-    job = _jobs.get(job_id)
-    if not job:
-        return {"ok": False, "error": "Job not found"}
-    return {"ok": True, "jobId": job_id, **job}
-
-
-@app.get("/api/files/{job_id}/{path:path}")
-def api_file(job_id: str, path: str):
-    file_path = EXPORTS_DIR / job_id / path
-    if not file_path.exists():
-        return {"ok": False, "error": "File not found"}
-    return FileResponse(file_path, filename=Path(path).name)
-
-
-# ── Helpers ──────────────────────────────────────────────────────────────
-
-def _sanitize(name: str) -> str:
-    import re
-    return re.sub(r'[^a-zA-Z0-9_-]', '_', name).strip('_')
-
-
-def _adapt_doc_to_legacy_config(doc_data: dict) -> dict:
-    """Convert document format to legacy config using the real adapter."""
-    from cardforge.document.model import CardForgeDocument
-    from cardforge.document.adapter import resolve_document_variables, adapt_to_legacy_config
-
-    doc = CardForgeDocument.from_dict(doc_data)
-    doc = resolve_document_variables(doc)
-    return adapt_to_legacy_config(doc)
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition":
+                 f'attachment; filename="{doc.meta.id}_export.zip"'})

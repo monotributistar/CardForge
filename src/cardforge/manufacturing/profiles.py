@@ -31,9 +31,9 @@ class ManufacturingProfile:
     min_text_stroke: float = 0.6
 
     # Supported features
-    supported_relief_modes: List[str] = field(default_factory=lambda: ["emboss", "deboss", "flush", "cut"])
+    supported_relief_modes: List[str] = field(default_factory=lambda: ["emboss", "deboss", "flush", "cut", "deboss-backed"])
     supported_features: List[str] = field(default_factory=lambda: [
-        "text-block", "qr", "pattern", "logo", "frame", "corner",
+        "text-block", "text-pattern", "pattern", "qr", "icon", "shape",
     ])
 
     @classmethod
