@@ -50,7 +50,14 @@ def outline_cross_section(doc: DocumentV2) -> CrossSection:
     if o.type == "rect":
         local = s2.rect(o.width, o.height)
     elif o.type == "rounded-rect":
-        local = s2.rounded_rect(o.width, o.height, o.radius)
+        if o.corners:
+            c = o.corner_radii()
+            local = s2.rounded_rect_corners(
+                o.width, o.height, c["tl"], c["tr"], c["br"], c["bl"])
+        else:
+            local = s2.rounded_rect(o.width, o.height, o.radius)
+    elif o.type == "circle":
+        local = s2.circle(o.diameter or o.width)
     elif o.type == "path":
         local = s2.svg_path(o.svg_path, o.width, o.height)
     else:

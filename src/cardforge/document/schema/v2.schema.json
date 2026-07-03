@@ -25,7 +25,8 @@
       "additionalProperties": false,
       "properties": {
         "outline": { "$ref": "#/$defs/outline" },
-        "thickness": { "type": "number", "exclusiveMinimum": 0 }
+        "thickness": { "type": "number", "exclusiveMinimum": 0 },
+        "fill": { "$ref": "#/$defs/fill" }
       }
     },
     "materials": {
@@ -81,7 +82,27 @@
             "type": { "const": "rounded-rect" },
             "width": { "type": "number", "exclusiveMinimum": 0 },
             "height": { "type": "number", "exclusiveMinimum": 0 },
-            "radius": { "type": "number", "minimum": 0 }
+            "radius": { "type": "number", "minimum": 0 },
+            "corners": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Per-corner radii; missing corners fall back to radius.",
+              "properties": {
+                "tl": { "type": "number", "minimum": 0 },
+                "tr": { "type": "number", "minimum": 0 },
+                "br": { "type": "number", "minimum": 0 },
+                "bl": { "type": "number", "minimum": 0 }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "diameter"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "circle" },
+            "diameter": { "type": "number", "exclusiveMinimum": 0 }
           }
         },
         {
@@ -117,6 +138,39 @@
           "type": "array",
           "items": { "$ref": "#/$defs/feature" }
         }
+      }
+    },
+    "fill": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": { "type": { "const": "solid" } }
+        },
+        {
+          "type": "object",
+          "required": ["type", "pattern", "spacing"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "lattice" },
+            "pattern": { "enum": ["dots", "lines", "grid", "hex"] },
+            "spacing": { "type": "number", "exclusiveMinimum": 0 },
+            "lineWidth": { "type": "number", "exclusiveMinimum": 0 },
+            "border": { "type": "number", "minimum": 0 }
+          }
+        }
+      ]
+    },
+    "backing": {
+      "type": "object",
+      "required": ["mode"],
+      "additionalProperties": false,
+      "description": "Support pad so a feature isn't left floating (esp. over a lattice).",
+      "properties": {
+        "mode": { "enum": ["auto", "on", "off"] },
+        "thickness": { "type": "number", "exclusiveMinimum": 0 },
+        "material": { "type": "string", "minLength": 1 }
       }
     },
     "transform": {
@@ -206,7 +260,8 @@
         "material": { "type": "string", "minLength": 1 },
         "relief": { "$ref": "#/$defs/relief" },
         "zOrder": { "type": "integer" },
-        "visible": { "type": "boolean" }
+        "visible": { "type": "boolean" },
+        "backing": { "$ref": "#/$defs/backing" }
       }
     },
     "feature": {

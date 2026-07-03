@@ -48,6 +48,35 @@ def rounded_rect(width: float, height: float, radius: float,
     return _cs([pts])
 
 
+def rounded_rect_corners(width: float, height: float,
+                         tl: float, tr: float, br: float, bl: float,
+                         segments: int = ARC_SEGMENTS) -> CrossSection:
+    """Rectangle with an independent radius per corner (0 = sharp).
+
+    Lets an outline be, e.g., three curved corners and one square.
+    """
+    def clamp(r: float) -> float:
+        return max(0.0, min(r, width / 2, height / 2))
+
+    tl, tr, br, bl = clamp(tl), clamp(tr), clamp(br), clamp(bl)
+    pts: List[Point] = []
+
+    def arc(cx: float, cy: float, r: float, a0: float, corner: Point) -> None:
+        if r == 0:
+            pts.append(corner)
+            return
+        for i in range(segments + 1):
+            a = a0 + (math.pi / 2) * i / segments
+            pts.append((cx + r * math.cos(a), cy + r * math.sin(a)))
+
+    # counter-clockwise from the top-right corner (local y-up, top at 0)
+    arc(width - tr, -tr, tr, 0.0, (width, 0))
+    arc(tl, -tl, tl, math.pi / 2, (0, 0))
+    arc(bl, -height + bl, bl, math.pi, (0, -height))
+    arc(width - br, -height + br, br, 3 * math.pi / 2, (width, -height))
+    return _cs([pts])
+
+
 def circle(diameter: float, segments: int = 4 * ARC_SEGMENTS) -> CrossSection:
     """Circle inscribed in its bounding box (anchor = box top-left)."""
     r = diameter / 2

@@ -55,19 +55,44 @@ class Meta:
 
 @dataclass
 class Outline:
-    """Object outline. type: rect | rounded-rect | path (svgPath in mm units)."""
+    """Object outline. type: rect | rounded-rect | circle | path.
+
+    rounded-rect: uniform `radius`, or per-corner `corners` {tl,tr,br,bl}
+    (missing corners fall back to `radius`).
+    circle: `diameter` (width/height are derived == diameter).
+    path: `svg_path` in mm units.
+    """
 
     type: str
     width: float
     height: float
     radius: float = 0.0
+    corners: Optional[Dict[str, float]] = None
+    diameter: float = 0.0
     svg_path: str = ""
+
+    def corner_radii(self) -> Dict[str, float]:
+        """Effective per-corner radii, filling from `radius` where unset."""
+        c = self.corners or {}
+        return {k: float(c.get(k, self.radius)) for k in ("tl", "tr", "br", "bl")}
+
+
+@dataclass
+class Fill:
+    """Base body fill. type: solid | lattice(pattern, spacing, line_width, border)."""
+
+    type: str = "solid"
+    pattern: str = "grid"
+    spacing: float = 4.0
+    line_width: float = 1.0
+    border: float = 2.0  # solid rim width around the lattice
 
 
 @dataclass
 class ObjectSpec:
     outline: Outline
     thickness: float
+    fill: Fill = field(default_factory=Fill)
 
 
 @dataclass
@@ -107,6 +132,23 @@ class Relief:
 
 
 @dataclass
+class Backing:
+    """Support pad under a feature so it isn't left floating.
+
+    mode: 'auto'  — the compiler adds a pad only when the feature would float
+                    (e.g. over a lattice base); no-op on a solid base.
+          'on'    — always add a pad.
+          'off'   — never add a pad.
+    thickness: pad thickness in mm (0 = full object thickness, a solid column).
+    material: pad material id (defaults to the base material).
+    """
+
+    mode: str = "auto"
+    thickness: float = 0.0
+    material: str = ""
+
+
+@dataclass
 class Font:
     family: str
     size: float  # mm (cap-height-relative sizing handled by kernel)
@@ -127,6 +169,7 @@ class Feature:
     name: str = ""
     z_order: int = 0
     visible: bool = True
+    backing: Optional[Backing] = None                       # support pad
     # type-specific:
     lines: List[str] = field(default_factory=list)          # text-block
     font: Optional[Font] = None                              # text-block, text-pattern
@@ -206,12 +249,24 @@ class DocumentV2:
             modified=data["meta"].get("modified", ""),
         )
         o = data["object"]
+        ol = o["outline"]
+        diameter = ol.get("diameter", 0.0)
         outline = Outline(
-            type=o["outline"]["type"],
-            width=o["outline"]["width"],
-            height=o["outline"]["height"],
-            radius=o["outline"].get("radius", 0.0),
-            svg_path=o["outline"].get("svgPath", ""),
+            type=ol["type"],
+            width=ol.get("width", diameter),
+            height=ol.get("height", diameter),
+            radius=ol.get("radius", 0.0),
+            corners=dict(ol["corners"]) if ol.get("corners") else None,
+            diameter=diameter,
+            svg_path=ol.get("svgPath", ""),
+        )
+        fd = o.get("fill") or {"type": "solid"}
+        fill = Fill(
+            type=fd.get("type", "solid"),
+            pattern=fd.get("pattern", "grid"),
+            spacing=fd.get("spacing", 4.0),
+            line_width=fd.get("lineWidth", 1.0),
+            border=fd.get("border", 2.0),
         )
         materials = [
             Material(
@@ -233,7 +288,7 @@ class DocumentV2:
         }
         return cls(
             meta=meta,
-            object=ObjectSpec(outline=outline, thickness=o["thickness"]),
+            object=ObjectSpec(outline=outline, thickness=o["thickness"], fill=fill),
             materials=materials,
             faces=faces,
             variables=dict(data.get("variables", {})),
@@ -248,6 +303,8 @@ class DocumentV2:
             "object": {
                 "outline": _outline_to_dict(self.object.outline),
                 "thickness": self.object.thickness,
+                **({"fill": _fill_to_dict(self.object.fill)}
+                   if self.object.fill.type != "solid" else {}),
             },
             "materials": [
                 {k: v for k, v in {
@@ -305,6 +362,10 @@ def validate_v2(data: Dict[str, Any]) -> None:
                 if feat.get("material") not in mat_ids:
                     errors.append(
                         f"faces/{face_id}/{fid}: unknown material '{feat.get('material')}'")
+                bm = (feat.get("backing") or {}).get("material")
+                if bm and bm not in mat_ids:
+                    errors.append(
+                        f"faces/{face_id}/{fid}: unknown backing material '{bm}'")
                 relief = feat.get("relief", {})
                 fm = relief.get("floorMaterial")
                 if fm and fm not in mat_ids:
@@ -337,11 +398,35 @@ def is_v2(data: Dict[str, Any]) -> bool:
 # ── dict ↔ dataclass helpers ───────────────────────────────────────────────
 
 def _outline_to_dict(o: Outline) -> Dict[str, Any]:
+    if o.type == "circle":
+        return {"type": "circle", "diameter": o.diameter or o.width}
     d: Dict[str, Any] = {"type": o.type, "width": o.width, "height": o.height}
     if o.type == "rounded-rect":
         d["radius"] = o.radius
+        if o.corners:
+            d["corners"] = dict(o.corners)
     if o.type == "path":
         d["svgPath"] = o.svg_path
+    return d
+
+
+def _fill_to_dict(f: "Fill") -> Dict[str, Any]:
+    if f.type == "solid":
+        return {"type": "solid"}
+    d: Dict[str, Any] = {"type": "lattice", "pattern": f.pattern, "spacing": f.spacing}
+    if f.line_width:
+        d["lineWidth"] = f.line_width
+    if f.border:
+        d["border"] = f.border
+    return d
+
+
+def _backing_to_dict(b: "Backing") -> Dict[str, Any]:
+    d: Dict[str, Any] = {"mode": b.mode}
+    if b.thickness:
+        d["thickness"] = b.thickness
+    if b.material:
+        d["material"] = b.material
     return d
 
 
@@ -376,6 +461,11 @@ def _feature_from_dict(f: Dict[str, Any]) -> Feature:
         ),
         z_order=f.get("zOrder", 0),
         visible=f.get("visible", True),
+        backing=Backing(
+            mode=f["backing"].get("mode", "auto"),
+            thickness=f["backing"].get("thickness", 0.0),
+            material=f["backing"].get("material", ""),
+        ) if f.get("backing") else None,
         lines=list(f.get("lines", [])),
         font=font,
         align=f.get("align", "left"),
@@ -424,6 +514,8 @@ def _feature_to_dict(f: Feature) -> Dict[str, Any]:
         d["zOrder"] = f.z_order
     if not f.visible:
         d["visible"] = False
+    if f.backing is not None:
+        d["backing"] = _backing_to_dict(f.backing)
 
     if f.type == "text-block":
         d["lines"] = list(f.lines)

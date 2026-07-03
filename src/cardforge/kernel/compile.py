@@ -25,6 +25,7 @@ from typing import Dict, List, Tuple
 from manifold3d import CrossSection, Manifold
 
 from cardforge.document.schema_v2 import DocumentV2
+from cardforge.kernel.base import base_region, is_lattice
 from cardforge.kernel.features import build_feature_shapes, outline_cross_section
 from cardforge.kernel.types import Bounds, CompiledScene, CompileTrace
 
@@ -53,11 +54,13 @@ def compile_document(doc: DocumentV2, asset_root: Path | str = ".") -> Tuple[Com
     base_mat = doc.base_material.id
 
     outline_phys = outline_cross_section(doc)
-    base = _extrude_at(outline_phys, T, 0.0)
+    base_region_2d = base_region(doc)   # solid outline, or lattice grid + rim
+    lattice = is_lattice(doc)
 
     adds: List[_SolidOp] = []          # emboss / inlay / floor volumes
     base_subtracts: List[Manifold] = []  # cavities + inlay pockets
     cut_shapes: List[CrossSection] = []  # through-holes (physical 2D)
+    base_backing_2d: List[CrossSection] = []  # footprints that solidify the base
     seq = 0
 
     for face_id in ("front", "back"):
@@ -91,6 +94,7 @@ def compile_document(doc: DocumentV2, asset_root: Path | str = ".") -> Tuple[Com
                     "bed-facing face — it must stay flat (use deboss, cut, or flush)")
                 continue
 
+            footprint = CrossSection()  # union of this feature's placed shapes
             for mat, cs in fs.shapes:
                 if cs.is_empty():
                     continue
@@ -102,6 +106,7 @@ def compile_document(doc: DocumentV2, asset_root: Path | str = ".") -> Tuple[Com
                 cs = cs ^ outline_phys
                 if cs.is_empty():
                     continue
+                footprint = footprint + cs
 
                 if relief.mode == "emboss":
                     # Front (presentation) face only — back emboss was rejected
@@ -151,7 +156,35 @@ def compile_document(doc: DocumentV2, asset_root: Path | str = ".") -> Tuple[Com
                     trace.warnings.append(
                         f"{face_id}/{feature.id}: unknown relief mode '{relief.mode}'")
 
+            # ── Backing pad: keep the feature from floating ────────────────
+            # Needed when the base under it is open (a lattice). 'auto' adds a
+            # pad only then; 'on' forces one; 'off' never. Cuts never get a pad.
+            b = feature.backing
+            mode = b.mode if b else "auto"
+            need_pad = (mode == "on" or (mode == "auto" and lattice)) \
+                and relief.mode != "cut" and not footprint.is_empty()
+            if need_pad:
+                pad_mat = (b.material if (b and b.material) else base_mat)
+                thk = (b.thickness if (b and b.thickness) else 0.0)
+                if pad_mat == base_mat and thk <= 0:
+                    # Full-thickness solid of the footprint, folded into the
+                    # base region so subtracts/emboss then apply over solid.
+                    base_backing_2d.append(footprint)
+                else:
+                    h = T if thk <= 0 else min(thk, T)
+                    z0 = 0.0 if (thk <= 0 or is_back) else T - h
+                    pad = _extrude_at(footprint, h, z0)
+                    base_subtracts.append(pad)  # carve base so pad is disjoint
+                    adds.append(_SolidOp((feature.z_order - 1000, seq), pad_mat, pad))
+
     # ── Assembly ───────────────────────────────────────────────────────────
+    if base_backing_2d:
+        region = base_region_2d
+        for fp in base_backing_2d:
+            region = region + fp
+        base_region_2d = region
+    base = _extrude_at(base_region_2d, T, 0.0)
+
     for sub in base_subtracts:
         base = base - sub
 
