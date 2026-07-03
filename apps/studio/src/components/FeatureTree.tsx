@@ -27,6 +27,7 @@ export const FeatureTree: React.FC = () => {
   const tab = useDocumentStore(getActiveTab)
   const applyEdit = useDocumentStore(s => s.applyEdit)
   const select = useDocumentStore(s => s.select)
+  const toggleSelect = useDocumentStore(s => s.toggleSelect)
   const setActiveFace = useDocumentStore(s => s.setActiveFace)
   const [addMenuOpen, setAddMenuOpen] = useState(false)
 
@@ -58,7 +59,7 @@ export const FeatureTree: React.FC = () => {
       const f = d.faces[face]
       if (f) f.features = f.features.filter(x => x.id !== id)
     })
-    if (tab.selectedFeatureId === id) select(null)
+    if (tab.selectedFeatureIds.includes(id)) toggleSelect(id)
   }
 
   const toggleVisible = (face: FaceId, id: string) => {
@@ -120,12 +121,17 @@ export const FeatureTree: React.FC = () => {
               <span style={{ fontSize: 10, color: '#484f58' }}>({features.length})</span>
             </div>
             {features.map(f => {
-              const isSel = f.id === tab.selectedFeatureId
+              const isSel = tab.selectedFeatureIds.includes(f.id)
               const hidden = f.visible === false
               return (
                 <div
                   key={f.id}
-                  onClick={() => { setActiveFace(face); select(f.id) }}
+                  onClick={e => {
+                    setActiveFace(face)
+                    // Shift+click toggles membership; plain click replaces.
+                    if (e.shiftKey) toggleSelect(f.id)
+                    else select(f.id)
+                  }}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 6, padding: '3px 8px 3px 22px',
                     cursor: 'pointer',

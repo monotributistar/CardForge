@@ -31,21 +31,29 @@ export function documentToScreen(
   }
 }
 
-/** Convert screen pixel coordinates to document mm coordinates */
+/**
+ * Convert screen pixel coordinates to document mm coordinates.
+ * Clamps to the card bounds unless `clamp` is false (used by the
+ * scale/rotate handle drags, which need the raw pointer position).
+ */
 export function screenToDocument(
   screenX: number, screenY: number,
   cardWidth: number, cardHeight: number,
   viewport: CanvasViewport,
   containerWidth: number, containerHeight: number,
+  clamp = true,
 ): { x: number; y: number } {
   const PX = PX_PER_MM
   const scaledW = cardWidth * PX * viewport.zoom
   const scaledH = cardHeight * PX * viewport.zoom
   const cx = (containerWidth - scaledW) / 2 + viewport.offsetX
   const cy = (containerHeight - scaledH) / 2 + viewport.offsetY
+  const x = (screenX - cx) / (PX * viewport.zoom)
+  const y = (screenY - cy) / (PX * viewport.zoom)
+  if (!clamp) return { x, y }
   return {
-    x: Math.max(0, Math.min(cardWidth, (screenX - cx) / (PX * viewport.zoom))),
-    y: Math.max(0, Math.min(cardHeight, (screenY - cy) / (PX * viewport.zoom))),
+    x: Math.max(0, Math.min(cardWidth, x)),
+    y: Math.max(0, Math.min(cardHeight, y)),
   }
 }
 

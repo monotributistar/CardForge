@@ -8,21 +8,30 @@ import React, { useRef, useState, useCallback, useEffect } from 'react'
 import type { DocumentV2, Feature } from '../../types/cardforge'
 
 type Outline = DocumentV2['object']['outline']
-import { useDocumentStore, getActiveTab } from '../../state/DocumentStore'
+import { useDocumentStore, getActiveTab, findFeature } from '../../state/DocumentStore'
 import { useCompileStore } from '../../state/CompileStore'
 import {
   PX_PER_MM, documentToScreen, screenToDocument, getFeatureBoundsMm,
   type CanvasViewport, type BoundsMm,
 } from './CanvasCoords'
+import { SelectionHandles } from './handles'
 
 const RELIEF_BADGES: Record<string, string> = {
   'emboss': '▲', 'deboss': '▼', 'flush': '▬', 'cut': '✂', 'deboss-backed': '▣',
 }
 
+// Drag gestures. `moved` gates the undo snapshot: only the first applyEdit
+// of a gesture snapshots, so undo restores the pre-drag state in one step.
+type DragState =
+  | { mode: 'move'; start: { x: number; y: number }; items: Array<{ id: string; x: number; y: number }>; collapseTo: string | null; moved: boolean }
+  | { mode: 'scale'; featureId: string; center: { x: number; y: number }; startDiag: number; startScale: number; moved: boolean }
+  | { mode: 'rotate'; featureId: string; center: { x: number; y: number }; moved: boolean }
+
 export const InteractiveCanvas: React.FC = () => {
   const tab = useDocumentStore(getActiveTab)
   const applyEdit = useDocumentStore(s => s.applyEdit)
   const select = useDocumentStore(s => s.select)
+  const toggleSelect = useDocumentStore(s => s.toggleSelect)
   const setActiveFace = useDocumentStore(s => s.setActiveFace)
   const constraints = useCompileStore(s => s.constraints)
 
@@ -31,7 +40,7 @@ export const InteractiveCanvas: React.FC = () => {
   const [viewport, setViewport] = useState<CanvasViewport>({ zoom: 1, offsetX: 0, offsetY: 0 })
 
   // Drag state kept in refs so pointer handlers never see stale values.
-  const dragRef = useRef<{ featureId: string; offsetMm: { x: number; y: number }; moved: boolean } | null>(null)
+  const dragRef = useRef<DragState | null>(null)
   const panRef = useRef<{ startX: number; startY: number; baseX: number; baseY: number } | null>(null)
   const [, forceRender] = useState(0)
 
@@ -49,17 +58,18 @@ export const InteractiveCanvas: React.FC = () => {
   const cardW = outline?.width ?? 85
   const cardH = outline?.height ?? 54
   const features: Feature[] = doc?.faces[activeFace]?.features ?? []
-  const selectedFeatureId = tab?.selectedFeatureId ?? null
+  const selectedIds = tab?.selectedFeatureIds ?? []
+  const primaryId = tab?.selectedFeatureId ?? null
 
   const materialColor = useCallback((id: string): string =>
     doc?.materials.find(m => m.id === id)?.color ?? '#8b949e', [doc])
 
-  const clientToDoc = useCallback((clientX: number, clientY: number) => {
+  const clientToDoc = useCallback((clientX: number, clientY: number, clamp = true) => {
     const el = containerRef.current
     const rect = el?.getBoundingClientRect() ?? { left: 0, top: 0 }
     return screenToDocument(
       clientX - rect.left, clientY - rect.top,
-      cardW, cardH, viewport, containerSize.w, containerSize.h,
+      cardW, cardH, viewport, containerSize.w, containerSize.h, clamp,
     )
   }, [cardW, cardH, viewport, containerSize])
 
@@ -68,15 +78,62 @@ export const InteractiveCanvas: React.FC = () => {
   const handleFeaturePointerDown = useCallback((e: React.PointerEvent, feature: Feature) => {
     e.stopPropagation()
     e.preventDefault()
-    select(feature.id)
+    if (e.shiftKey) {
+      // Shift+click toggles membership; no drag starts.
+      toggleSelect(feature.id)
+      return
+    }
+    // Plain click: replace selection — unless the feature is already part of
+    // a multi-selection, in which case keep the group so the drag moves it all
+    // (a click without movement collapses to this feature on pointer-up).
+    const alreadySelected = selectedIds.includes(feature.id)
+    const ids = alreadySelected ? selectedIds : [feature.id]
+    if (!alreadySelected) select(feature.id)
     const pos = clientToDoc(e.clientX, e.clientY)
+    const items: Array<{ id: string; x: number; y: number }> = []
+    for (const id of ids) {
+      const found = doc ? findFeature(doc, id) : null
+      if (found) items.push({ id, x: found.feature.transform.x, y: found.feature.transform.y })
+    }
     dragRef.current = {
-      featureId: feature.id,
-      offsetMm: { x: pos.x - feature.transform.x, y: pos.y - feature.transform.y },
+      mode: 'move',
+      start: pos,
+      items,
+      collapseTo: alreadySelected && ids.length > 1 ? feature.id : null,
       moved: false,
     }
     ;(e.currentTarget as Element).setPointerCapture?.(e.pointerId)
-  }, [select, clientToDoc])
+  }, [select, toggleSelect, selectedIds, doc, clientToDoc])
+
+  const handleScaleStart = useCallback((e: React.PointerEvent, feature: Feature, b: BoundsMm) => {
+    e.stopPropagation()
+    e.preventDefault()
+    const center = { x: b.x + b.w / 2, y: b.y + b.h / 2 }
+    const pos = clientToDoc(e.clientX, e.clientY, false)
+    const startDiag = Math.hypot(pos.x - center.x, pos.y - center.y)
+    if (startDiag < 1e-6) return
+    dragRef.current = {
+      mode: 'scale',
+      featureId: feature.id,
+      center,
+      startDiag,
+      startScale: feature.transform.scale ?? 1,
+      moved: false,
+    }
+    ;(e.currentTarget as Element).setPointerCapture?.(e.pointerId)
+  }, [clientToDoc])
+
+  const handleRotateStart = useCallback((e: React.PointerEvent, feature: Feature, b: BoundsMm) => {
+    e.stopPropagation()
+    e.preventDefault()
+    dragRef.current = {
+      mode: 'rotate',
+      featureId: feature.id,
+      center: { x: b.x + b.w / 2, y: b.y + b.h / 2 },
+      moved: false,
+    }
+    ;(e.currentTarget as Element).setPointerCapture?.(e.pointerId)
+  }, [])
 
   const handleBackgroundPointerDown = useCallback((e: React.PointerEvent) => {
     select(null)
@@ -87,14 +144,48 @@ export const InteractiveCanvas: React.FC = () => {
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
     const drag = dragRef.current
     if (drag) {
-      const pos = clientToDoc(e.clientX, e.clientY)
-      const x = Math.round((pos.x - drag.offsetMm.x) * 10) / 10
-      const y = Math.round((pos.y - drag.offsetMm.y) * 10) / 10
-      // Snapshot only once per drag gesture so undo restores the start position.
+      // Snapshot only once per drag gesture so undo restores the start state.
+      if (drag.mode === 'move') {
+        const pos = clientToDoc(e.clientX, e.clientY)
+        const dx = pos.x - drag.start.x
+        const dy = pos.y - drag.start.y
+        applyEdit(d => {
+          for (const item of drag.items) {
+            for (const face of ['front', 'back'] as const) {
+              const f = d.faces[face]?.features.find(f => f.id === item.id)
+              if (f) {
+                f.transform.x = Math.round((item.x + dx) * 10) / 10
+                f.transform.y = Math.round((item.y + dy) * 10) / 10
+              }
+            }
+          }
+        }, { snapshot: !drag.moved })
+        drag.moved = true
+        return
+      }
+      if (drag.mode === 'scale') {
+        const pos = clientToDoc(e.clientX, e.clientY, false)
+        const diag = Math.hypot(pos.x - drag.center.x, pos.y - drag.center.y)
+        const scale = Math.max(0.1, Math.round(drag.startScale * (diag / drag.startDiag) * 100) / 100)
+        applyEdit(d => {
+          for (const face of ['front', 'back'] as const) {
+            const f = d.faces[face]?.features.find(f => f.id === drag.featureId)
+            if (f) f.transform.scale = scale
+          }
+        }, { snapshot: !drag.moved })
+        drag.moved = true
+        return
+      }
+      // rotate
+      const pos = clientToDoc(e.clientX, e.clientY, false)
+      // 0° = handle straight up from the bbox center; clockwise positive.
+      let angle = Math.atan2(pos.x - drag.center.x, -(pos.y - drag.center.y)) * 180 / Math.PI
+      if (e.shiftKey) angle = Math.round(angle / 5) * 5
+      angle = Math.round(angle)
       applyEdit(d => {
         for (const face of ['front', 'back'] as const) {
           const f = d.faces[face]?.features.find(f => f.id === drag.featureId)
-          if (f) { f.transform.x = x; f.transform.y = y }
+          if (f) f.transform.rotation = angle
         }
       }, { snapshot: !drag.moved })
       drag.moved = true
@@ -107,10 +198,15 @@ export const InteractiveCanvas: React.FC = () => {
   }, [clientToDoc, applyEdit])
 
   const handlePointerUp = useCallback(() => {
+    const drag = dragRef.current
+    // Click (no movement) on a member of a multi-selection collapses to it.
+    if (drag && drag.mode === 'move' && !drag.moved && drag.collapseTo) {
+      select(drag.collapseTo)
+    }
     dragRef.current = null
     panRef.current = null
     forceRender(n => n + 1)
-  }, [])
+  }, [select])
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1
@@ -185,7 +281,7 @@ export const InteractiveCanvas: React.FC = () => {
           {/* Features */}
           {features.filter(f => f.visible !== false).map(f => {
             const b = getFeatureBoundsMm(f, cardW, cardH)
-            const isSel = f.id === selectedFeatureId
+            const isSel = selectedIds.includes(f.id)
             const issues = featureIssues(f.id)
             const hasError = issues.some(i => i.severity === 'error')
             const color = materialColor(f.material)
@@ -217,6 +313,15 @@ export const InteractiveCanvas: React.FC = () => {
                   >{RELIEF_BADGES[f.relief.mode] ?? ''}</text>
                   {/* Material chip (8px at 100%) */}
                   <rect x={b.x} y={b.y + b.h + 0.5} width={2} height={2} fill={color} stroke="#30363d" strokeWidth={0.1} />
+                  {/* Scale / rotate handles on the primary selection */}
+                  {f.id === primaryId && (
+                    <SelectionHandles
+                      bounds={b}
+                      zoom={viewport.zoom}
+                      onScaleStart={e => handleScaleStart(e, f, b)}
+                      onRotateStart={e => handleRotateStart(e, f, b)}
+                    />
+                  )}
                 </g>
                 {/* Constraint badge */}
                 {issues.length > 0 && (

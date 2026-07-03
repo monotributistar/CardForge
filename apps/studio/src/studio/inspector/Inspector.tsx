@@ -7,7 +7,7 @@ import type {
   DocumentV2, Feature, Material, ReliefMode,
   TextBlockFeature, TextPatternFeature, PatternFeature, QRFeature, IconFeature, ShapeFeature,
 } from '../../types/cardforge'
-import { useDocumentStore, getActiveTab, findFeature } from '../../state/DocumentStore'
+import { useDocumentStore, getActiveTab, findFeature, removeFeatures } from '../../state/DocumentStore'
 import { FIELD_DEFS, QR_TYPE_LABELS, type QRType } from '../services/QRFields'
 
 type ApplyEdit = (mutator: (doc: DocumentV2) => void) => void
@@ -27,7 +27,7 @@ export const Inspector: React.FC = () => {
   return (
     <div style={{ height: '100%', overflowY: 'auto', padding: 10, fontSize: 12, color: '#c9d1d9' }}>
       {found
-        ? <FeatureInspector doc={doc} feature={found.feature} applyEdit={applyEdit} />
+        ? <FeatureInspector doc={doc} feature={found.feature} selectedIds={tab.selectedFeatureIds} applyEdit={applyEdit} />
         : <DocumentInspector doc={doc} applyEdit={applyEdit} />}
     </div>
   )
@@ -39,7 +39,8 @@ const Empty: React.FC<{ text: string }> = ({ text }) => (
 
 // ── Feature inspector ────────────────────────────────────────────────
 
-const FeatureInspector: React.FC<{ doc: DocumentV2; feature: Feature; applyEdit: ApplyEdit }> = ({ doc, feature, applyEdit }) => {
+const FeatureInspector: React.FC<{ doc: DocumentV2; feature: Feature; selectedIds: string[]; applyEdit: ApplyEdit }> = ({ doc, feature, selectedIds, applyEdit }) => {
+  const select = useDocumentStore(s => s.select)
   const edit = <T extends Feature>(fn: (f: T) => void) => {
     applyEdit(d => {
       for (const face of ['front', 'back'] as const) {
@@ -49,9 +50,42 @@ const FeatureInspector: React.FC<{ doc: DocumentV2; feature: Feature; applyEdit:
     })
   }
 
+  const duplicate = () => {
+    let newId = `${feature.id}-copy`
+    applyEdit(d => {
+      for (const face of ['front', 'back'] as const) {
+        const list = d.faces[face]?.features
+        const src = list?.find(x => x.id === feature.id)
+        if (!list || !src) continue
+        while (findFeature(d, newId)) newId = `${newId}-copy`
+        const copy = structuredClone(src)
+        copy.id = newId
+        copy.transform.x = Math.round((copy.transform.x + 3) * 10) / 10
+        copy.transform.y = Math.round((copy.transform.y + 3) * 10) / 10
+        list.push(copy)
+        return
+      }
+    })
+    select(newId)
+  }
+
+  const deleteSelected = () => {
+    const ids = selectedIds.length > 0 ? selectedIds : [feature.id]
+    applyEdit(d => removeFeatures(d, ids))
+    select(null)
+  }
+
   return (
     <div>
       <Section title={`${feature.type}`}>
+        <Row label="Actions">
+          <div style={{ display: 'flex', gap: 4 }}>
+            <ActionBtn title="Bring forward (zOrder +1)" onClick={() => edit(f => { f.zOrder = (f.zOrder ?? 0) + 1 })}>⬆</ActionBtn>
+            <ActionBtn title="Send back (zOrder −1)" onClick={() => edit(f => { f.zOrder = (f.zOrder ?? 0) - 1 })}>⬇</ActionBtn>
+            <ActionBtn title="Duplicate" onClick={duplicate}>⧉</ActionBtn>
+            <ActionBtn title={selectedIds.length > 1 ? `Delete ${selectedIds.length} features` : 'Delete'} onClick={deleteSelected}>🗑</ActionBtn>
+          </div>
+        </Row>
         <Row label="ID"><ReadOnly value={feature.id} /></Row>
         <Row label="Name">
           <TextInput value={feature.name ?? ''} placeholder={feature.id}
@@ -592,6 +626,13 @@ const MaterialSelect: React.FC<{ materials: Material[]; value: string; allowEmpt
       {materials.map(m => <option key={m.id} value={m.id}>{m.name} ({m.id})</option>)}
     </select>
   </div>
+)
+
+const ActionBtn: React.FC<{ title: string; onClick: () => void; children: React.ReactNode }> = ({ title, onClick, children }) => (
+  <button title={title} onClick={onClick} style={{
+    background: '#21262d', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: 4,
+    padding: '2px 8px', fontSize: 12, cursor: 'pointer', lineHeight: '16px',
+  }}>{children}</button>
 )
 
 const IconBtn: React.FC<{ title: string; onClick: () => void; children: React.ReactNode }> = ({ title, onClick, children }) => (

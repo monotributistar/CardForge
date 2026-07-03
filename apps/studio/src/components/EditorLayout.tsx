@@ -6,6 +6,7 @@ import React, { useState } from 'react'
 import { useDocumentStore, getActiveTab } from '../state/DocumentStore'
 import { useCompileStore, recompileActive } from '../state/CompileStore'
 import { FeatureTree } from './FeatureTree'
+import { MaterialPalette } from './MaterialPalette'
 import { InteractiveCanvas } from '../studio/canvas/InteractiveCanvas'
 import { CompiledViewer } from '../studio/canvas/CompiledViewer'
 import { Inspector } from '../studio/inspector/Inspector'
@@ -38,7 +39,7 @@ export const EditorLayout: React.FC = () => {
           <div style={{ flex: 1, overflowY: 'auto' }}>
             <FeatureTree />
           </div>
-          <MaterialsPanel />
+          <MaterialPalette />
         </div>
 
         {/* Center */}
@@ -77,25 +78,6 @@ export const EditorLayout: React.FC = () => {
       </div>
 
       <StatusBar />
-    </div>
-  )
-}
-
-// ── Materials (read-only for now) ────────────────────────────────────
-
-const MaterialsPanel: React.FC = () => {
-  const tab = useDocumentStore(getActiveTab)
-  if (!tab) return null
-  return (
-    <div style={{ borderTop: '1px solid #30363d', padding: '8px 10px', flexShrink: 0 }}>
-      <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, color: '#8b949e', marginBottom: 6 }}>Materials</div>
-      {tab.doc.materials.map(m => (
-        <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 0', fontSize: 12, color: '#c9d1d9' }}>
-          <span style={{ width: 12, height: 12, borderRadius: 3, background: m.color, border: '1px solid #30363d', flexShrink: 0 }} />
-          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.name}</span>
-          {m.slot != null && <span style={{ fontSize: 10, color: '#484f58' }}>slot {m.slot}</span>}
-        </div>
-      ))}
     </div>
   )
 }

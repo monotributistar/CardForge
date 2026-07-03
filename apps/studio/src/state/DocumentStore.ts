@@ -18,6 +18,9 @@ export interface TabState {
   dirty: boolean
   undo: string[]
   redo: string[]
+  /** Multi-selection; the last entry is the primary. */
+  selectedFeatureIds: string[]
+  /** Primary selection (= last selected). Kept in sync with selectedFeatureIds. */
   selectedFeatureId: string | null
   activeFace: FaceId
 }
@@ -36,7 +39,10 @@ export interface DocumentStoreState {
   applyEdit: (mutator: (doc: DocumentV2) => void, options?: { snapshot?: boolean }) => void
   undo: () => void
   redo: () => void
+  /** Replace the selection with a single feature (or clear it). */
   select: (featureId: string | null) => void
+  /** Toggle a feature's membership in the multi-selection. */
+  toggleSelect: (featureId: string) => void
   setActiveFace: (face: FaceId) => void
   markSaved: (fileHandle?: FileSystemFileHandle | null, fileName?: string | null) => void
   /** Open parsed JSON data. Non-v2 documents are migrated via the Core API. */
@@ -55,6 +61,7 @@ function makeTab(doc: DocumentV2, fileName: string | null = null, fileHandle: Fi
     dirty: false,
     undo: [],
     redo: [],
+    selectedFeatureIds: [],
     selectedFeatureId: null,
     activeFace: 'front',
   }
@@ -137,7 +144,20 @@ export const useDocumentStore = create<DocumentStoreState>((set, get) => {
     },
 
     select: (featureId) => {
-      updateActiveTab(tab => ({ ...tab, selectedFeatureId: featureId || null }))
+      updateActiveTab(tab => ({
+        ...tab,
+        selectedFeatureIds: featureId ? [featureId] : [],
+        selectedFeatureId: featureId || null,
+      }))
+    },
+
+    toggleSelect: (featureId) => {
+      updateActiveTab(tab => {
+        const ids = tab.selectedFeatureIds.includes(featureId)
+          ? tab.selectedFeatureIds.filter(id => id !== featureId)
+          : [...tab.selectedFeatureIds, featureId]
+        return { ...tab, selectedFeatureIds: ids, selectedFeatureId: ids[ids.length - 1] ?? null }
+      })
     },
 
     setActiveFace: (face) => {
@@ -171,6 +191,14 @@ export const useDocumentStore = create<DocumentStoreState>((set, get) => {
 
 export function getActiveTab(state: DocumentStoreState): TabState | null {
   return state.tabs.find(t => t.id === state.activeTabId) ?? null
+}
+
+/** Remove features by id from both faces. Use inside applyEdit. */
+export function removeFeatures(doc: DocumentV2, ids: string[]): void {
+  for (const face of ['front', 'back'] as const) {
+    const f = doc.faces[face]
+    if (f) f.features = f.features.filter(x => !ids.includes(x.id))
+  }
 }
 
 /** Find a feature by id in either face. Returns the feature and its face. */
