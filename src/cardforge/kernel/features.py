@@ -1,0 +1,199 @@
+"""Feature → placed 2D shapes per material (physical space).
+
+`build_feature_shapes()` turns one schema-v2 feature into:
+  - [(material_id, CrossSection)] in PHYSICAL space, front-face orientation
+    (the compiler mirrors for the back face),
+  - a FeatureRecord for the trace.
+
+Missing assets and unresolvable content do not raise: they return an empty
+shape list and a reason string so compilation degrades gracefully and the
+editor can surface the problem as a warning.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+from manifold3d import CrossSection
+
+from cardforge.document.schema_v2 import DocumentV2, Feature
+from cardforge.kernel import patterns as pat
+from cardforge.kernel import shapes2d as s2
+from cardforge.kernel.qr import format_qr_payload, qr_cross_section
+from cardforge.kernel.svg import SVGParseError, load_svg_file, svg_to_color_shapes
+from cardforge.kernel.text import text_block
+from cardforge.kernel.types import Bounds, FeatureRecord
+
+
+@dataclass
+class FeatureShapes:
+    shapes: List[Tuple[str, CrossSection]] = field(default_factory=list)
+    record: Optional[FeatureRecord] = None
+    skip_reason: str = ""
+
+
+def _doc_to_phys_anchor(x: float, y: float, obj_h: float) -> Tuple[float, float]:
+    """Document top-left-origin y-down → physical bottom-left-origin y-up."""
+    return x, obj_h - y
+
+
+def _phys_bounds_to_doc(cs: CrossSection, obj_h: float) -> Bounds:
+    min_x, min_y, max_x, max_y = cs.bounds()
+    return Bounds(min_x, obj_h - max_y, max_x - min_x, max_y - min_y)
+
+
+def outline_cross_section(doc: DocumentV2) -> CrossSection:
+    """Object outline in physical space: x ∈ [0,W], y ∈ [0,H]."""
+    o = doc.object.outline
+    if o.type == "rect":
+        local = s2.rect(o.width, o.height)
+    elif o.type == "rounded-rect":
+        local = s2.rounded_rect(o.width, o.height, o.radius)
+    elif o.type == "path":
+        local = s2.svg_path(o.svg_path, o.width, o.height)
+    else:
+        raise ValueError(f"unknown outline type: {o.type}")
+    return local.translate((0, o.height))
+
+
+def build_feature_shapes(doc: DocumentV2, face_id: str, feature: Feature,
+                         outline_phys: CrossSection,
+                         asset_root: Path) -> FeatureShapes:
+    obj_h = doc.object.outline.height
+    f = feature
+    px, py = _doc_to_phys_anchor(f.transform.x, f.transform.y, obj_h)
+    rot = -f.transform.rotation  # doc rotation is screen-clockwise; phys is y-up
+    scale = f.transform.scale
+    extra: Dict[str, float] = {}
+
+    def placed(local: CrossSection) -> CrossSection:
+        return s2.place(local, px, py, rotation_deg=rot, scale=scale)
+
+    shapes: List[Tuple[str, CrossSection]] = []
+
+    if f.type == "text-block":
+        result = text_block(
+            f.lines, f.font.family, f.font.size,
+            weight=f.font.weight, axes=f.font.axes,
+            align=f.align, line_height=f.line_height,
+        )
+        extra["font_size"] = f.font.size
+        shapes = [(f.material, placed(result.cross_section))]
+
+    elif f.type == "text-pattern":
+        unit = text_block([f.text], f.font.family, f.font.size,
+                          weight=f.font.weight, axes=f.font.axes).cross_section
+        if unit.is_empty():
+            return FeatureShapes(skip_reason="text-pattern rendered empty")
+        cs = pat.repeat_shape(outline_phys, unit, f.spacing, angle_deg=-f.angle)
+        extra["font_size"] = f.font.size
+        shapes = [(f.material, cs)]
+
+    elif f.type == "pattern":
+        if f.region == "face" or not (f.width and f.height):
+            region = outline_phys
+        else:
+            region = placed(s2.rect(f.width, f.height)) ^ outline_phys
+        if f.pattern_type == "dots":
+            d = f.element_size or f.spacing * 0.4
+            cs = pat.dots(region, f.spacing, d, angle_deg=-f.angle)
+            extra["element_mm"] = d
+        elif f.pattern_type == "lines":
+            w = f.element_size or 0.8
+            cs = pat.lines(region, f.spacing, w, angle_deg=-f.angle or 45.0)
+            extra["element_mm"] = w
+        elif f.pattern_type == "grid":
+            w = f.element_size or 0.8
+            cs = pat.grid(region, f.spacing, w, angle_deg=-f.angle)
+            extra["element_mm"] = w
+        elif f.pattern_type == "hex":
+            w = f.element_size or 0.6
+            cs = pat.hex_grid(region, f.spacing, w)
+            extra["element_mm"] = w
+        else:
+            return FeatureShapes(skip_reason=f"unknown patternType '{f.pattern_type}'")
+        shapes = [(f.material, cs)]
+
+    elif f.type == "qr":
+        payload = format_qr_payload(f.qr_type, f.fields)
+        if not payload:
+            return FeatureShapes(skip_reason="qr payload empty")
+        result = qr_cross_section(payload, f.size, f.quiet_zone, f.error_correction)
+        extra["qr_modules"] = result.modules
+        extra["qr_module_mm"] = result.module_mm
+        shapes = [(f.material, placed(result.cross_section))]
+
+    elif f.type == "icon":
+        try:
+            if f.svg_inline:
+                source = f.svg_inline
+            else:
+                ref = f.svg_asset
+                path = doc.assets.get(ref, ref)
+                source = load_svg_file(str((asset_root / path)))
+            color_shapes = svg_to_color_shapes(source, f.width, f.height)
+        except SVGParseError as e:
+            return FeatureShapes(skip_reason=str(e))
+        if not color_shapes:
+            return FeatureShapes(skip_reason="icon SVG has no filled shapes")
+        for color, cs in sorted(color_shapes.items()):
+            mat = f.color_map.get(color, f.material)
+            shapes.append((mat, placed(cs)))
+        extra["icon_colors"] = len(color_shapes)
+
+    elif f.type == "shape":
+        o = doc.object.outline
+        if f.shape_type == "rect":
+            local = s2.rect(f.width, f.height)
+        elif f.shape_type == "rounded-rect":
+            local = s2.rounded_rect(f.width, f.height, f.radius)
+        elif f.shape_type == "circle":
+            local = s2.circle(f.diameter or f.width)
+        elif f.shape_type == "ring":
+            local = s2.ring(f.diameter or f.width, f.stroke_width or 1.0)
+        elif f.shape_type == "frame":
+            w = f.width or (o.width - 2 * f.inset)
+            h = f.height or (o.height - 2 * f.inset)
+            local = s2.frame(w, h, f.stroke_width or 1.0, radius=f.radius)
+            if not f.width:  # inset-relative to the outline, ignore transform
+                px, py = _doc_to_phys_anchor(f.inset, f.inset, obj_h)
+        elif f.shape_type == "corner-marks":
+            w = f.width or (o.width - 2 * f.inset)
+            h = f.height or (o.height - 2 * f.inset)
+            local = s2.corner_marks(w, h, f.length or 6.0, f.stroke_width or 1.0)
+            if not f.width:
+                px, py = _doc_to_phys_anchor(f.inset, f.inset, obj_h)
+        elif f.shape_type == "path":
+            local = s2.svg_path(f.svg_path, f.width, f.height)
+        else:
+            return FeatureShapes(skip_reason=f"unknown shapeType '{f.shape_type}'")
+        extra["shape_type"] = f.shape_type
+        shapes = [(f.material, placed(local))]
+
+    else:
+        return FeatureShapes(skip_reason=f"unknown feature type '{f.type}'")
+
+    # Non-empty union of everything this feature produced, for the record
+    non_empty = [cs for _, cs in shapes if not cs.is_empty()]
+    if not non_empty:
+        return FeatureShapes(skip_reason="feature produced no geometry")
+    union = non_empty[0]
+    for cs in non_empty[1:]:
+        union = union + cs
+
+    relief_value = (f.relief.height if f.relief.mode == "emboss"
+                    else 0.0 if f.relief.mode == "cut" else f.relief.depth)
+    record = FeatureRecord(
+        feature_id=f.id,
+        face_id=face_id,
+        type=f.type,
+        material=f.material,
+        relief_mode=f.relief.mode,
+        relief_value=relief_value,
+        bounds=_phys_bounds_to_doc(union, obj_h),
+        area=sum(cs.area() for cs in non_empty),
+        extra=extra,
+    )
+    return FeatureShapes(shapes=shapes, record=record)
