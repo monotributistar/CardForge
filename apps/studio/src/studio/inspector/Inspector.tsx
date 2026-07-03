@@ -500,6 +500,43 @@ const FillEditor: React.FC<{ fill: Fill | undefined; applyEdit: ApplyEdit }> = (
   )
 }
 
+// ── Manufacturing (nozzle / process / layer height) ──────────────────
+
+const PROCESS_OPTIONS: Array<[string, string]> = [
+  ['fdm', 'FDM'], ['sla', 'SLA'], ['laser', 'Laser'], ['cnc', 'CNC'],
+]
+
+const ManufacturingEditor: React.FC<{ doc: DocumentV2; applyEdit: ApplyEdit }> = ({ doc, applyEdit }) => {
+  const mfg = doc.manufacturing
+  const nozzle = mfg?.nozzle ?? 0.4
+  const process = mfg?.process ?? 'fdm'
+  const layerHeight = mfg?.layerHeight ?? 0.2
+
+  // Mutate doc.manufacturing, creating it if missing.
+  const editMfg = (fn: (m: NonNullable<DocumentV2['manufacturing']>) => void) => applyEdit(d => {
+    if (!d.manufacturing) d.manufacturing = {}
+    fn(d.manufacturing)
+  })
+
+  return (
+    <Section title="Manufacturing">
+      <Row label="Nozzle (mm)">
+        <NumInput value={nozzle} step={0.05} onCommit={v => editMfg(m => { m.nozzle = v })} />
+      </Row>
+      <Row label="Process">
+        <Select value={process} options={PROCESS_OPTIONS}
+          onCommit={v => editMfg(m => { m.process = v as NonNullable<DocumentV2['manufacturing']>['process'] })} />
+      </Row>
+      <Row label="Layer height">
+        <NumInput value={layerHeight} step={0.02} onCommit={v => editMfg(m => { m.layerHeight = v })} />
+      </Row>
+      <div style={{ fontSize: 11, color: '#484f58', padding: '2px 0' }}>
+        Min detail ≈ nozzle — drives the detail-size alerts.
+      </div>
+    </Section>
+  )
+}
+
 // Width/height helper — circle is width=height=diameter.
 const outlineDims = (o: Outline): { width: number; height: number } =>
   o.type === 'circle' ? { width: o.diameter, height: o.diameter } : { width: o.width, height: o.height }
@@ -565,6 +602,8 @@ const DocumentInspector: React.FC<{ doc: DocumentV2; applyEdit: ApplyEdit }> = (
       </Section>
 
       <FillEditor fill={fill} applyEdit={applyEdit} />
+
+      <ManufacturingEditor doc={doc} applyEdit={applyEdit} />
 
       <Section title="Variables">
         <StringMapEditor

@@ -24,6 +24,7 @@ export function createNewDocument(): DocumentV2 {
       outline: { type: 'rounded-rect', width: 85, height: 54, radius: 4 },
       thickness: 1.8,
     },
+    manufacturing: { process: 'fdm', nozzle: 0.4, layerHeight: 0.2 },
     materials: [
       { id: 'base', name: 'PLA Negro', color: '#1a1a1a', slot: 1, role: 'base' },
       { id: 'text', name: 'PLA Blanco', color: '#ffffff', slot: 2, role: 'text' },

@@ -8,7 +8,7 @@ import React, { useRef, useState, useCallback, useEffect } from 'react'
 import type { Feature, Outline, Fill } from '../../types/cardforge'
 
 import { useDocumentStore, getActiveTab, findFeature } from '../../state/DocumentStore'
-import { useCompileStore } from '../../state/CompileStore'
+import { useCompileStore, mergeIssues } from '../../state/CompileStore'
 import {
   PX_PER_MM, documentToScreen, screenToDocument, getFeatureBoundsMm, outlineSize,
   type CanvasViewport, type BoundsMm,
@@ -34,6 +34,10 @@ export const InteractiveCanvas: React.FC = () => {
   const toggleSelect = useDocumentStore(s => s.toggleSelect)
   const setActiveFace = useDocumentStore(s => s.setActiveFace)
   const constraints = useCompileStore(s => s.constraints)
+  const manufacturing = useCompileStore(s => s.manufacturing)
+  // Merge geometry constraints + manufacturing issues so per-feature badges
+  // surface both streams.
+  const issuesMerged = mergeIssues({ constraints, manufacturing })
 
   const containerRef = useRef<HTMLDivElement>(null)
   const [containerSize, setContainerSize] = useState({ w: 800, h: 500 })
@@ -232,8 +236,8 @@ export const InteractiveCanvas: React.FC = () => {
   const svgW = cardW * PX_PER_MM * viewport.zoom
   const svgH = cardH * PX_PER_MM * viewport.zoom
 
-  // Constraint lookup per feature
-  const featureIssues = (id: string) => constraints.filter(c => c.featureId === id)
+  // Merged issue lookup per feature (geometry + manufacturing)
+  const featureIssues = (id: string) => issuesMerged.filter(c => c.featureId === id)
 
   return (
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 }}>

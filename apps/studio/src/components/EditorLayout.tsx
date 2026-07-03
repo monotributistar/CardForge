@@ -4,9 +4,10 @@
 
 import React, { useState } from 'react'
 import { useDocumentStore, getActiveTab } from '../state/DocumentStore'
-import { useCompileStore, recompileActive } from '../state/CompileStore'
+import { useCompileStore, recompileActive, mergeIssues } from '../state/CompileStore'
 import { FeatureTree } from './FeatureTree'
 import { MaterialPalette } from './MaterialPalette'
+import { IssuesPanel } from './IssuesPanel'
 import { InteractiveCanvas } from '../studio/canvas/InteractiveCanvas'
 import { CompiledViewer } from '../studio/canvas/CompiledViewer'
 import { Inspector } from '../studio/inspector/Inspector'
@@ -40,6 +41,7 @@ export const EditorLayout: React.FC = () => {
             <FeatureTree />
           </div>
           <MaterialPalette />
+          <IssuesPanel />
         </div>
 
         {/* Center */}
@@ -98,8 +100,9 @@ const StatusBar: React.FC = () => {
   const constraints = useCompileStore(s => s.constraints)
   const stats = useCompileStore(s => s.stats)
 
-  const errorCount = constraints.filter(c => c.severity === 'error').length
-  const warningCount = constraints.filter(c => c.severity === 'warning').length
+  const issues = mergeIssues({ constraints, manufacturing })
+  const errorCount = issues.filter(i => i.severity === 'error').length
+  const warningCount = issues.filter(i => i.severity === 'warning').length
 
   return (
     <div style={{

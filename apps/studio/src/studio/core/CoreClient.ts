@@ -16,6 +16,8 @@ export interface ConstraintIssue {
   message: string
   featureId?: string
   faceId?: string
+  /** Present on manufacturing-rule issues: a human hint on how to fix it. */
+  suggestion?: string
 }
 
 export interface ManufacturingSummary {

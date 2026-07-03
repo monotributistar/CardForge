@@ -40,6 +40,42 @@ const EMPTY: CompileStoreState = {
 
 export const useCompileStore = create<CompileStoreState>(() => ({ ...EMPTY }))
 
+// ── Unified issue list ───────────────────────────────────────────────
+// Merges kernel geometric `constraints` with `manufacturing.issues` into a
+// single normalized list so panels/badges/status can read one stream.
+
+export interface UnifiedIssue {
+  severity: 'error' | 'warning'
+  code: string
+  message: string
+  featureId?: string
+  suggestion?: string
+  source: 'geometry' | 'manufacturing'
+}
+
+/** Merge the two alert streams of a compile state into one normalized list. */
+export function mergeIssues(state: Pick<CompileStoreState, 'constraints' | 'manufacturing'>): UnifiedIssue[] {
+  const out: UnifiedIssue[] = []
+  for (const c of state.constraints) {
+    out.push({
+      severity: c.severity, code: c.code, message: c.message,
+      featureId: c.featureId, suggestion: c.suggestion, source: 'geometry',
+    })
+  }
+  for (const m of state.manufacturing?.issues ?? []) {
+    out.push({
+      severity: m.severity, code: m.code, message: m.message,
+      featureId: m.featureId, suggestion: m.suggestion, source: 'manufacturing',
+    })
+  }
+  return out
+}
+
+/** Snapshot helper — the merged issue list for the current compile state. */
+export function allIssues(): UnifiedIssue[] {
+  return mergeIssues(useCompileStore.getState())
+}
+
 // ── Compile pipeline ─────────────────────────────────────────────────
 
 const DEBOUNCE_MS = 400
