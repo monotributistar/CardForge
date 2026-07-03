@@ -30,6 +30,8 @@ class IssueCode(str, Enum):
     # Features
     QR_TOO_SMALL = "qr_too_small"
     QR_QUIET_ZONE = "qr_quiet_zone"
+    QR_CONTRAST = "qr_contrast"      # QR won't scan — too little colour/shadow contrast
+    QR_OPACITY = "qr_opacity"        # coloured inlay too shallow to print opaque
     TEXT_TOO_SMALL = "text_too_small"
     MATERIAL_OVERLAP = "material_overlap"
 

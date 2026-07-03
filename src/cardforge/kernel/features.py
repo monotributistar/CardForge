@@ -131,6 +131,7 @@ def build_feature_shapes(doc: DocumentV2, face_id: str, feature: Feature,
         result = qr_cross_section(payload, f.size, f.quiet_zone, f.error_correction)
         extra["qr_modules"] = result.modules
         extra["qr_module_mm"] = result.module_mm
+        extra["qr_quiet_mm"] = f.quiet_zone
         shapes = [(f.material, placed(result.cross_section))]
 
     elif f.type == "icon":

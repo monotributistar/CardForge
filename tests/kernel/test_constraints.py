@@ -42,13 +42,8 @@ class TestConstraints:
                                      {"mode": "emboss", "height": 0.4})])
         assert "min-feature-size" in codes(issues_for(doc))
 
-    def test_qr_too_small_warning(self):
-        doc = make_doc(front=[{
-            "id": "q", "type": "qr", "transform": {"x": 10, "y": 10},
-            "material": "text", "relief": {"mode": "emboss", "height": 0.4},
-            "qrType": "url", "fields": {"url": "https://x.dev"}, "size": 15,
-        }])
-        assert "qr-too-small" in codes(issues_for(doc))
+    # QR sizing/contrast/quiet-zone moved to the manufacturing analyzer
+    # (nozzle-aware) — see tests/manufacturing/test_qr.py.
 
     def test_depth_exceeds_thickness_error(self):
         doc = make_doc(front=[square("deep", 10, 10, 10, "base",

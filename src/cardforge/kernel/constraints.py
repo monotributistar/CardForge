@@ -56,14 +56,8 @@ def check_constraints(doc: DocumentV2, trace: CompileTrace) -> List[ConstraintIs
                 Severity.WARNING, "safe-margin",
                 f"Feature is within {SAFE_MARGIN_MM}mm of the object edge", **loc))
 
-        # 4. QR-specific
-        if r.type == "qr":
-            qr_size = r.extra.get("qr_modules", 0) * r.extra.get("qr_module_mm", 0)
-            if qr_size and qr_size < MIN_QR_MM:
-                issues.append(ConstraintIssue(
-                    Severity.WARNING, "qr-too-small",
-                    f"QR is {qr_size:.0f}mm; below {MIN_QR_MM:.0f}mm scanning "
-                    "reliability drops", **loc))
+        # 4. QR sizing/contrast/quiet-zone live in the manufacturing analyzer
+        #    (nozzle-aware), not here — this stays purely geometric.
 
         # 5. Relief depth vs thickness
         if r.relief_mode in ("deboss", "flush", "deboss-backed"):
