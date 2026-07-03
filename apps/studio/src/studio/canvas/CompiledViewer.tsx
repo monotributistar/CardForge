@@ -1,40 +1,53 @@
-// CompiledViewer — 3D STL inspector using Three.js
+// CompiledViewer — renders the EXACT 3MF bytes the Core returned.
 //
-// Renders compiled STL files with orbit controls, render modes,
-// exploded view, material visibility toggles.
+// Fidelity guarantee: no geometry is reimplemented here. The base64 3MF
+// from CompileStore is parsed with three's ThreeMFLoader and displayed
+// with orbit controls, render modes, per-part visibility and explode view.
 
 import React, { useRef, useEffect, useState, useCallback } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
-import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js'
+import { ThreeMFLoader } from 'three/examples/jsm/loaders/3MFLoader.js'
+import { useCompileStore } from '../../state/CompileStore'
 
-// ── Types ────────────────────────────────────────────────────────────
+type RenderMode = 'solid' | 'wireframe' | 'solid-edges'
 
-export interface STLPart {
-  name: string
-  color: string
-  data: ArrayBuffer
+interface PartInfo { name: string; color: string }
+
+function base64ToArrayBuffer(b64: string): ArrayBuffer {
+  const bin = atob(b64)
+  const bytes = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+  return bytes.buffer
 }
 
-export interface CompiledViewerProps {
-  parts: STLPart[]
-  visibleParts: Set<string>
-  onTogglePart: (name: string) => void
-  explosion: number // 0–1
-  renderMode: 'solid' | 'wireframe' | 'solid-edges'
+interface SceneRefs {
+  scene: THREE.Scene
+  camera: THREE.PerspectiveCamera
+  renderer: THREE.WebGLRenderer
+  controls: OrbitControls
+  model: THREE.Group | null
+  /** part name → meshes (with original local z stored in userData.baseZ) */
+  partMeshes: Map<string, THREE.Mesh[]>
+  fittedOnce: boolean
 }
 
-// ── Component ────────────────────────────────────────────────────────
+export const CompiledViewer: React.FC = () => {
+  const model3mfB64 = useCompileStore(s => s.model3mfB64)
+  const status = useCompileStore(s => s.status)
+  const compileError = useCompileStore(s => s.error)
 
-export const CompiledViewer: React.FC<CompiledViewerProps> = ({
-  parts, visibleParts, onTogglePart, explosion, renderMode,
-}) => {
   const containerRef = useRef<HTMLDivElement>(null)
-  const [loading, setLoading] = useState(false)
-  const sceneRef = useRef<{ scene: THREE.Scene; camera: THREE.PerspectiveCamera; renderer: THREE.WebGLRenderer; controls: OrbitControls; meshes: Map<string, THREE.Group> } | null>(null)
+  const sceneRef = useRef<SceneRefs | null>(null)
   const animRef = useRef<number>(0)
 
-  // Init Three.js
+  const [renderMode, setRenderMode] = useState<RenderMode>('solid')
+  const [explosion, setExplosion] = useState(0)
+  const [hiddenParts, setHiddenParts] = useState<Set<string>>(new Set())
+  const [parts, setParts] = useState<PartInfo[]>([])
+  const [parseError, setParseError] = useState<string | null>(null)
+
+  // ── Init Three.js ─────────────────────────────────────────────────
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
@@ -42,11 +55,11 @@ export const CompiledViewer: React.FC<CompiledViewerProps> = ({
     const scene = new THREE.Scene()
     scene.background = new THREE.Color('#0d1117')
 
-    const camera = new THREE.PerspectiveCamera(45, el.clientWidth / el.clientHeight, 0.1, 500)
+    const camera = new THREE.PerspectiveCamera(45, el.clientWidth / Math.max(1, el.clientHeight), 0.1, 1000)
     camera.position.set(80, 40, 120)
     camera.lookAt(0, 0, 0)
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true })
+    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true })
     renderer.setSize(el.clientWidth, el.clientHeight)
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     el.appendChild(renderer.domElement)
@@ -56,7 +69,6 @@ export const CompiledViewer: React.FC<CompiledViewerProps> = ({
     controls.dampingFactor = 0.1
     controls.target.set(0, 0, 0)
 
-    // Lights
     scene.add(new THREE.AmbientLight(0x404060, 2))
     const dir1 = new THREE.DirectionalLight(0xffffff, 1.5)
     dir1.position.set(1, 1, 1)
@@ -65,11 +77,11 @@ export const CompiledViewer: React.FC<CompiledViewerProps> = ({
     dir2.position.set(-1, -0.5, -0.5)
     scene.add(dir2)
 
-    // Grid helper
     const grid = new THREE.GridHelper(120, 20, '#30363d', '#21262d')
+    grid.position.y = -2
     scene.add(grid)
 
-    sceneRef.current = { scene, camera, renderer, controls, meshes: new Map() }
+    sceneRef.current = { scene, camera, renderer, controls, model: null, partMeshes: new Map(), fittedOnce: false }
 
     const animate = () => {
       animRef.current = requestAnimationFrame(animate)
@@ -78,145 +90,146 @@ export const CompiledViewer: React.FC<CompiledViewerProps> = ({
     }
     animate()
 
-    const handleResize = () => {
-      if (!el || !sceneRef.current) return
-      const { camera: cam, renderer: r } = sceneRef.current
-      cam.aspect = el.clientWidth / el.clientHeight
-      cam.updateProjectionMatrix()
-      r.setSize(el.clientWidth, el.clientHeight)
-    }
-    window.addEventListener('resize', handleResize)
+    const obs = new ResizeObserver(() => {
+      const s = sceneRef.current
+      if (!s || !el.clientWidth || !el.clientHeight) return
+      s.camera.aspect = el.clientWidth / el.clientHeight
+      s.camera.updateProjectionMatrix()
+      s.renderer.setSize(el.clientWidth, el.clientHeight)
+    })
+    obs.observe(el)
 
     return () => {
       cancelAnimationFrame(animRef.current)
-      window.removeEventListener('resize', handleResize)
+      obs.disconnect()
+      controls.dispose()
       renderer.dispose()
       if (el.contains(renderer.domElement)) el.removeChild(renderer.domElement)
+      sceneRef.current = null
     }
   }, [])
 
-  // Load STL parts
+  // ── (Re)load the 3MF whenever the compiled bytes change ──────────
   useEffect(() => {
     const s = sceneRef.current
     if (!s) return
-    const { scene, meshes } = s
 
-    // Remove old meshes
-    meshes.forEach(g => scene.remove(g))
-    meshes.clear()
-
-    if (parts.length === 0) return
-    setLoading(true)
-
-    const loader = new STLLoader()
-    let loaded = 0
-
-    const expY = explosion * 5 // mm separation per unit
-
-    parts.forEach((part, idx) => {
-      const geometry = loader.parse(part.data)
-      const material = new THREE.MeshPhongMaterial({
-        color: new THREE.Color(part.color),
-        specular: 0x111111,
-        shininess: 30,
-        flatShading: false,
+    // Remove previous model
+    if (s.model) {
+      s.scene.remove(s.model)
+      s.model.traverse(o => {
+        if (o instanceof THREE.Mesh || o instanceof THREE.LineSegments) {
+          o.geometry.dispose()
+          const mat = o.material as THREE.Material | THREE.Material[]
+          if (Array.isArray(mat)) mat.forEach(m => m.dispose())
+          else mat.dispose()
+        }
       })
-
-      const mesh = new THREE.Mesh(geometry, material)
-      mesh.name = part.name
-      mesh.visible = visibleParts.has(part.name)
-
-      // Center geometry
-      geometry.computeBoundingBox()
-      const box = geometry.boundingBox!
-      const cx = (box.max.x + box.min.x) / 2
-      const cy = (box.max.y + box.min.y) / 2
-      const cz = (box.max.z + box.min.z) / 2
-      mesh.position.set(-cx, -cy + idx * expY, -cz)
-
-      // Edges for solid-edges mode
-      const edgesGeo = new THREE.EdgesGeometry(geometry, 15)
-      const edgesMat = new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.3 })
-      const edges = new THREE.LineSegments(edgesGeo, edgesMat)
-      edges.name = part.name + '-edges'
-      edges.visible = renderMode === 'solid-edges'
-
-      const group = new THREE.Group()
-      group.add(mesh)
-      group.add(edges)
-      group.name = part.name
-
-      scene.add(group)
-      meshes.set(part.name, group)
-      loaded++
-      if (loaded >= parts.length) setLoading(false)
-    })
-
-    // Fit camera
-    if (parts.length > 0) {
-      const box = new THREE.Box3()
-      meshes.forEach(g => {
-        g.children.forEach(c => {
-          if (c instanceof THREE.Mesh) box.expandByObject(c)
-        })
-      })
-      const size = box.getSize(new THREE.Vector3())
-      const center = box.getCenter(new THREE.Vector3())
-      const maxDim = Math.max(size.x, size.y, size.z)
-      const cam = s.camera
-      cam.position.set(center.x + maxDim * 1.5, center.y + maxDim * 0.8, center.z + maxDim * 1.5)
-      s.controls.target.copy(center)
-      s.controls.update()
+      s.model = null
     }
-  }, [parts, explosion])
+    s.partMeshes.clear()
 
-  // Update visibility
-  useEffect(() => {
-    const s = sceneRef.current
-    if (!s) return
-    s.meshes.forEach((group, name) => {
-      const visible = visibleParts.has(name)
-      group.children.forEach(c => {
-        if (c instanceof THREE.Mesh) c.visible = visible
-        if (c instanceof THREE.LineSegments) c.visible = visible && renderMode === 'solid-edges'
-      })
-    })
-  }, [visibleParts])
+    if (!model3mfB64) {
+      setParts([])
+      setParseError(null)
+      return
+    }
 
-  // Update render mode
-  useEffect(() => {
-    const s = sceneRef.current
-    if (!s) return
-    s.meshes.forEach((group, name) => {
-      group.children.forEach(c => {
-        if (c instanceof THREE.Mesh) {
-          const mat = c.material as THREE.MeshPhongMaterial
-          mat.wireframe = renderMode === 'wireframe'
+    try {
+      const loader = new ThreeMFLoader()
+      const group = loader.parse(base64ToArrayBuffer(model3mfB64))
+
+      // 3MF is z-up; three.js is y-up.
+      group.rotation.x = -Math.PI / 2
+
+      // Collect named meshes (names come from the 3MF object names)
+      const partList: PartInfo[] = []
+      let unnamed = 0
+      group.traverse(obj => {
+        if (!(obj instanceof THREE.Mesh)) return
+        let name = obj.name
+        if (!name) {
+          // fall back to nearest named ancestor, else a numbered part
+          let p: THREE.Object3D | null = obj.parent
+          while (p && p !== group && !p.name) p = p.parent
+          name = (p && p !== group && p.name) || `part-${++unnamed}`
         }
-        if (c instanceof THREE.LineSegments) {
-          c.visible = renderMode === 'solid-edges' && visibleParts.has(name)
+        obj.userData.baseZ = obj.position.z
+        const existing = s.partMeshes.get(name)
+        if (existing) {
+          existing.push(obj)
+        } else {
+          s.partMeshes.set(name, [obj])
+          const mat = (Array.isArray(obj.material) ? obj.material[0] : obj.material) as THREE.MeshPhongMaterial
+          const color = mat?.color ? `#${mat.color.getHexString()}` : '#8b949e'
+          partList.push({ name, color })
         }
+        // Edge overlay (as child so it inherits the mesh transform)
+        const edges = new THREE.LineSegments(
+          new THREE.EdgesGeometry(obj.geometry, 15),
+          new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35 }),
+        )
+        edges.name = '__edges'
+        obj.add(edges)
       })
-    })
-  }, [renderMode, visibleParts])
 
-  // Update explosion positions
+      // Center the model at the origin
+      const box = new THREE.Box3().setFromObject(group)
+      const center = box.getCenter(new THREE.Vector3())
+      group.position.sub(center)
+
+      s.scene.add(group)
+      s.model = group
+      setParts(partList)
+      setParseError(null)
+      // Prune stale hidden entries but keep user's choices for stable names
+      setHiddenParts(prev => {
+        const next = new Set([...prev].filter(n => s.partMeshes.has(n)))
+        return next.size === prev.size ? prev : next
+      })
+
+      // Fit camera only on the very first load — keep it across reloads
+      if (!s.fittedOnce) {
+        const size = box.getSize(new THREE.Vector3())
+        const maxDim = Math.max(size.x, size.y, size.z, 1)
+        s.camera.position.set(maxDim * 1.2, maxDim * 0.9, maxDim * 1.5)
+        s.controls.target.set(0, 0, 0)
+        s.controls.update()
+        s.fittedOnce = true
+      }
+    } catch (e) {
+      setParts([])
+      setParseError(e instanceof Error ? e.message : String(e))
+    }
+  }, [model3mfB64])
+
+  // ── Apply render mode / visibility / explosion ────────────────────
   useEffect(() => {
     const s = sceneRef.current
     if (!s) return
-    const expY = explosion * 5
     let idx = 0
-    s.meshes.forEach((group, name) => {
-      group.children.forEach(c => {
-        if (c instanceof THREE.Mesh) {
-          const box = new THREE.Box3().setFromObject(c)
-          const cy = (box.max.y + box.min.y) / 2
-          c.position.y = -cy + idx * expY
-        }
-      })
+    s.partMeshes.forEach((meshes, name) => {
+      const visible = !hiddenParts.has(name)
+      for (const mesh of meshes) {
+        mesh.visible = visible
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+        for (const m of mats) (m as THREE.MeshPhongMaterial).wireframe = renderMode === 'wireframe'
+        const edges = mesh.children.find(c => c.name === '__edges')
+        if (edges) edges.visible = renderMode === 'solid-edges'
+        mesh.position.z = (mesh.userData.baseZ as number ?? 0) + idx * explosion * 5
+      }
       idx++
     })
-  }, [explosion])
+  }, [renderMode, hiddenParts, explosion, parts])
+
+  const togglePart = useCallback((name: string) => {
+    setHiddenParts(prev => {
+      const next = new Set(prev)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
+      return next
+    })
+  }, [])
 
   const resetCamera = useCallback(() => {
     const s = sceneRef.current
@@ -228,69 +241,82 @@ export const CompiledViewer: React.FC<CompiledViewerProps> = ({
 
   const fitCamera = useCallback(() => {
     const s = sceneRef.current
-    if (!s) return
-    const box = new THREE.Box3()
-    s.meshes.forEach(g => {
-      g.children.forEach(c => {
-        if (c instanceof THREE.Mesh && c.visible) box.expandByObject(c)
-      })
-    })
+    if (!s || !s.model) return
+    const box = new THREE.Box3().setFromObject(s.model)
     if (box.isEmpty()) return
     const size = box.getSize(new THREE.Vector3())
     const center = box.getCenter(new THREE.Vector3())
-    const maxDim = Math.max(size.x, size.y, size.z)
-    s.camera.position.set(center.x + maxDim * 1.5, center.y + maxDim * 0.8, center.z + maxDim * 1.5)
+    const maxDim = Math.max(size.x, size.y, size.z, 1)
+    s.camera.position.set(center.x + maxDim * 1.2, center.y + maxDim * 0.9, center.z + maxDim * 1.5)
     s.controls.target.copy(center)
     s.controls.update()
   }, [])
 
+  const cycleMode = () => setRenderMode(m => m === 'solid' ? 'solid-edges' : m === 'solid-edges' ? 'wireframe' : 'solid')
+
   return (
-    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative', minHeight: 0 }}>
       {/* Toolbar */}
-      <div style={{ position: 'absolute', top: 8, left: 8, zIndex: 10, display: 'flex', gap: 4 }}>
+      <div style={{ position: 'absolute', top: 8, left: 8, zIndex: 10, display: 'flex', gap: 4, alignItems: 'center' }}>
         <Btn onClick={resetCamera}>Reset</Btn>
         <Btn onClick={fitCamera}>Fit</Btn>
-        <Btn onClick={() => {}} style={{ color: '#484f58', cursor: 'default' }}>
+        <Btn onClick={cycleMode}>
           {renderMode === 'solid' ? 'Solid' : renderMode === 'wireframe' ? 'Wire' : 'Solid+E'}
         </Btn>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#8b949e', background: '#161b22', border: '1px solid #30363d', borderRadius: 4, padding: '2px 8px' }}>
+          Explode
+          <input
+            type="range" min={0} max={1} step={0.01} value={explosion}
+            onChange={e => setExplosion(Number(e.target.value))}
+            style={{ width: 70 }}
+          />
+        </label>
       </div>
 
       {/* Part legend */}
       {parts.length > 0 && (
         <div style={{ position: 'absolute', top: 8, right: 8, zIndex: 10, background: '#161b22', border: '1px solid #30363d', borderRadius: 6, padding: 8 }}>
-          {parts.map(p => (
-            <div key={p.name} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 0', cursor: 'pointer' }}
-              onClick={() => onTogglePart(p.name)}>
-              <span style={{
-                width: 12, height: 12, borderRadius: 2,
-                background: visibleParts.has(p.name) ? p.color : '#30363d',
-                border: `1px solid ${p.color}`,
-              }} />
-              <span style={{ fontSize: 11, color: visibleParts.has(p.name) ? '#c9d1d9' : '#484f58' }}>{p.name}</span>
-            </div>
-          ))}
+          {parts.map(p => {
+            const visible = !hiddenParts.has(p.name)
+            return (
+              <div key={p.name} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 0', cursor: 'pointer' }}
+                onClick={() => togglePart(p.name)}>
+                <span style={{
+                  width: 12, height: 12, borderRadius: 2,
+                  background: visible ? p.color : '#30363d',
+                  border: `1px solid ${p.color}`,
+                }} />
+                <span style={{ fontSize: 11, color: visible ? '#c9d1d9' : '#484f58' }}>{p.name}</span>
+              </div>
+            )
+          })}
         </div>
       )}
 
-      {/* Loading */}
-      {loading && (
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 5 }}>
-          <span style={{ color: '#8b949e', fontSize: 14 }}>Loading STL...</span>
+      {/* Status overlays */}
+      {status === 'compiling' && (
+        <div style={{ position: 'absolute', bottom: 8, left: 8, zIndex: 10, color: '#d29922', fontSize: 11, background: '#161b22', border: '1px solid #30363d', borderRadius: 4, padding: '2px 8px' }}>
+          Compiling…
         </div>
       )}
-
-      {/* Empty state */}
-      {!loading && parts.length === 0 && (
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 5, color: '#484f58', fontSize: 13 }}>
+      {parseError && (
+        <div style={{ position: 'absolute', bottom: 8, left: 8, right: 8, zIndex: 10, color: '#f85149', fontSize: 11, background: '#161b22', border: '1px solid #f85149', borderRadius: 4, padding: '4px 8px' }}>
+          Failed to parse 3MF: {parseError}
+        </div>
+      )}
+      {!model3mfB64 && !parseError && (
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 5, color: '#484f58', fontSize: 13, pointerEvents: 'none' }}>
           <div style={{ textAlign: 'center' }}>
             <div style={{ fontSize: 32, marginBottom: 8 }}>📦</div>
-            <div>No compiled output loaded</div>
-            <div style={{ fontSize: 11, marginTop: 4 }}>Load STL files to inspect</div>
+            <div>{status === 'error' ? 'Compile failed' : 'No compiled model yet'}</div>
+            {status === 'error' && compileError && (
+              <div style={{ fontSize: 11, marginTop: 4, maxWidth: 360 }}>{compileError}</div>
+            )}
           </div>
         </div>
       )}
 
-      <div ref={containerRef} style={{ flex: 1 }} />
+      <div ref={containerRef} style={{ flex: 1, minHeight: 0 }} />
     </div>
   )
 }
