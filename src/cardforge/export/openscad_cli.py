@@ -4,8 +4,20 @@ import os
 import shutil
 import subprocess
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Optional
+
+# Preferred install locations, most-capable first. The 2023.06+ snapshot ships
+# the Manifold backend, which renders extruded text / QR unions ~70-900x faster
+# than the CGAL backend in 2021.01 (37s -> 0.5s for a text-heavy card).
+_PREFERRED_BINS = [
+    "/Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD",
+    "/Applications/OpenSCAD-Nightly.app/Contents/MacOS/OpenSCAD",
+]
+_LEGACY_BINS = [
+    "/Applications/OpenSCAD-2021.01.app/Contents/MacOS/OpenSCAD",
+]
 
 
 @dataclass
@@ -43,30 +55,48 @@ def find_openscad() -> str:
     Raises:
         OpenSCADNotFoundError: If OpenSCAD is not found.
     """
-    # 1. Environment variable
+    # 1. Environment variable (explicit override wins)
     env_bin = os.environ.get("OPENSCAD_BIN")
     if env_bin and os.path.isfile(env_bin):
         return env_bin
 
-    # 2. PATH
+    # 2. Modern snapshot builds (Manifold backend) — preferred over the copy on
+    #    PATH, which on Homebrew is still the slow CGAL-only 2021.01.
+    for p in _PREFERRED_BINS:
+        if os.path.isfile(p):
+            return p
+
+    # 3. PATH
     which = shutil.which("openscad")
     if which:
         return which
 
-    # 3. macOS common paths
-    mac_paths = [
-        "/Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD",
-        "/Applications/OpenSCAD-2021.01.app/Contents/MacOS/OpenSCAD",
-    ]
-    for p in mac_paths:
+    # 4. Legacy install locations
+    for p in _LEGACY_BINS:
         if os.path.isfile(p):
             return p
 
     raise OpenSCADNotFoundError(
         "OpenSCAD executable not found. Install OpenSCAD or set OPENSCAD_BIN env var.\n"
-        "  macOS: brew install --cask openscad\n"
+        "  macOS (fast Manifold backend): brew install --cask openscad@snapshot\n"
         "  Then: export OPENSCAD_BIN=/Applications/OpenSCAD.app/Contents/MacOS/OpenSCAD"
     )
+
+
+@lru_cache(maxsize=8)
+def supports_manifold(openscad_bin: str) -> bool:
+    """Whether this OpenSCAD build accepts --backend=Manifold (2023.06+).
+
+    Result is cached per binary — probing runs `--help` once.
+    """
+    try:
+        proc = subprocess.run(
+            [openscad_bin, "--help"],
+            capture_output=True, text=True, timeout=15,
+        )
+        return "backend" in (proc.stdout + proc.stderr).lower()
+    except (subprocess.SubprocessError, OSError):
+        return False
 
 
 def run_openscad(
@@ -97,6 +127,13 @@ def run_openscad(
     output_stl.parent.mkdir(parents=True, exist_ok=True)
 
     cmd = [openscad_bin]
+    # Use the fast Manifold backend when available (2023.06+). Overridable via
+    # OPENSCAD_BACKEND=CGAL for debugging / geometry-diff purposes.
+    backend = os.environ.get("OPENSCAD_BACKEND")
+    if backend is None and supports_manifold(openscad_bin):
+        backend = "Manifold"
+    if backend:
+        cmd.extend(["--backend", backend])
     cmd.extend([
         "-o", str(output_stl),
         "--export-format", "binstl",

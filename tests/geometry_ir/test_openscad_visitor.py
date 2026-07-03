@@ -36,7 +36,8 @@ class TestOpenSCADVisitor:
 
         visitor = OpenSCADVisitor()
         scad = visitor.render(doc)
-        assert "text_emboss_layer" in scad
+        # 2D text shape — the ExtrudeNode supplies the single linear_extrude.
+        assert "text_shape_2d" in scad
         assert "Hello" in scad
 
     def test_renders_translate(self):
@@ -75,7 +76,8 @@ class TestOpenSCADVisitor:
 
         visitor = OpenSCADVisitor()
         scad = visitor.render(doc)
-        assert "svg_emboss_layer" in scad
+        # 2D SVG shape — the ExtrudeNode supplies the single linear_extrude.
+        assert "svg_shape_2d" in scad
         assert "qr.svg" in scad
 
     def test_single_child_union_no_wrapper(self):

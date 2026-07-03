@@ -19,11 +19,25 @@ class DocumentAsset:
 
 @dataclass
 class DocumentManufacturing:
-    profile: str = "fdm-standard"
-    process: str = "fdm"
+    """Manufacturing intent — how this document should be fabricated.
+
+    Separated from geometry: the document describes what to make,
+    this section describes how to make it.
+    """
+    process: str = "fdm"               # fdm, sla, laser, cnc
+    profile: str = "fdm-standard"      # standard-0.4, fine-0.25, etc.
     nozzle: float = 0.4
     layer_height: float = 0.2
     material: str = "PLA"
+    # Manufacturing faces
+    presentation_face: str = "front"    # Face shown to end user
+    preferred_print_face: str = "back"  # Face on build plate for FDM
+    # Strategy
+    first_layer_relief_mode: str = "deboss"
+    first_layer_max_depth: float = 0.20
+    elephant_foot_compensation: bool = True
+    top_surface_relief_mode: str = "emboss"
+    ironing_recommended: bool = False
 
 
 @dataclass
@@ -72,11 +86,18 @@ class CardForgeDocument:
         )
         mfg_data = data.get("manufacturing", {})
         manufacturing = DocumentManufacturing(
-            profile=mfg_data.get("profile", "fdm-standard"),
             process=mfg_data.get("process", "fdm"),
+            profile=mfg_data.get("profile", "fdm-standard"),
             nozzle=mfg_data.get("nozzle", 0.4),
             layer_height=mfg_data.get("layerHeight", 0.2),
             material=mfg_data.get("material", "PLA"),
+            presentation_face=mfg_data.get("presentationFace", "front"),
+            preferred_print_face=mfg_data.get("preferredPrintFace", "back"),
+            first_layer_relief_mode=mfg_data.get("firstLayerReliefMode", "deboss"),
+            first_layer_max_depth=mfg_data.get("firstLayerMaxDepth", 0.20),
+            elephant_foot_compensation=mfg_data.get("elephantFootCompensation", True),
+            top_surface_relief_mode=mfg_data.get("topSurfaceReliefMode", "emboss"),
+            ironing_recommended=mfg_data.get("ironingRecommended", False),
         )
         variables = data.get("variables", {})
         assets = {k: v for k, v in data.get("assets", {}).items()}

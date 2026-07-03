@@ -92,8 +92,11 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
     }
   }, [dragging])
 
-  const handleCanvasClick = useCallback(() => {
-    onSelectFeature('')
+  const handleCanvasPointerDown = useCallback((e: React.PointerEvent) => {
+    // Only deselect if clicking the container itself, not a feature overlay
+    if (e.target === e.currentTarget || (e.target as HTMLElement).dataset.feature === undefined) {
+      onSelectFeature('')
+    }
   }, [onSelectFeature])
 
   return (
@@ -121,7 +124,7 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
         }}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
-        onClick={handleCanvasClick}
+        onPointerDown={handleCanvasPointerDown}
       >
         {/* SVG layer */}
         {svgContent && (
@@ -144,6 +147,7 @@ export const InteractiveCanvas: React.FC<InteractiveCanvasProps> = ({
           return (
             <div
               key={feat.id}
+              data-feature={feat.id}
               onPointerDown={(e) => handlePointerDown(e, feat.id)}
               style={{
                 position: 'absolute', left: b.x, top: b.y, width: b.w, height: b.h,

@@ -48,7 +48,7 @@ export async function corePreview(document: CardForgeDocument): Promise<CoreClie
   } catch {
     // Fallback to CompileService
     const { compileLive } = await import('../services/CompileService')
-    const result = compileLive(document)
+    const result = await compileLive(document)
     return {
       frontSvg: result.frontSvg,
       backSvg: result.backSvg,

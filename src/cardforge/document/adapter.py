@@ -21,16 +21,58 @@ def resolve_document_variables(doc: CardForgeDocument) -> CardForgeDocument:
     return resolved
 
 
-def _resolve_feature_vars(feature: dict, variables: dict, assets: dict) -> None:
+def _build_qr_value(qr_type: str, feat: dict, variables: dict) -> str:
+    """Build the QR content string from type-specific fields."""
+    if qr_type == "vcard":
+        parts = ["BEGIN:VCARD", "VERSION:3.0"]
+        if feat.get("vcard_name") or variables.get("name"):
+            parts.append(f"FN:{feat.get('vcard_name') or variables.get('name', '')}")
+        if feat.get("vcard_title") or variables.get("title"):
+            parts.append(f"TITLE:{feat.get('vcard_title') or variables.get('title', '')}")
+        if feat.get("vcard_phone") or variables.get("phone"):
+            parts.append(f"TEL:{feat.get('vcard_phone') or variables.get('phone', '')}")
+        if feat.get("vcard_email") or variables.get("email"):
+            parts.append(f"EMAIL:{feat.get('vcard_email') or variables.get('email', '')}")
+        if feat.get("vcard_website") or variables.get("website"):
+            parts.append(f"URL:{feat.get('vcard_website') or variables.get('website', '')}")
+        parts.append("END:VCARD")
+        return "\n".join(parts)
+    elif qr_type == "wifi":
+        ssid = feat.get("wifi_ssid", variables.get("name", "MyWiFi"))
+        pwd = feat.get("wifi_password", "")
+        enc = feat.get("wifi_encryption", "WPA")
+        return f"WIFI:T:{enc};S:{ssid};P:{pwd};;"
+    elif qr_type == "email":
+        addr = feat.get("email_address", variables.get("email", ""))
+        subj = feat.get("email_subject", "")
+        body = feat.get("email_body", "")
+        mail = f"mailto:{addr}"
+        params = []
+        if subj:
+            from urllib.parse import quote
+            params.append(f"subject={quote(subj)}")
+        if body:
+            from urllib.parse import quote
+            params.append(f"body={quote(body)}")
+        if params:
+            mail += "?" + "&".join(params)
+        return mail
+    elif qr_type == "text":
+        return feat.get("text", feat.get("value", ""))
+    else:  # url
+        value = feat.get("url", feat.get("value", variables.get("website", "")))
+        return value if value.startswith("http") else f"https://{value}" if value else ""
+
+
+def _resolve_feature_vars(feat: dict, variables: dict, assets: dict) -> None:
     """Resolve {{var}} and {{assets.x}} in a feature dict in-place."""
-    for key, value in list(feature.items()):
+    for key, value in list(feat.items()):
         if isinstance(value, str):
-            feature[key] = _resolve_string(value, variables, assets)
+            feat[key] = _resolve_string(value, variables, assets)
         elif isinstance(value, list):
-            feature[key] = [
-                _resolve_string(v, variables, assets) if isinstance(v, str) else v
-                for v in value
-            ]
+            feat[key] = [_resolve_string(v, variables, assets) if isinstance(v, str) else v for v in value]
+        elif isinstance(value, dict):
+            _resolve_feature_vars(value, variables, assets)
 
 
 _VAR_RE = re.compile(r"\{\{(.+?)\}\}")
@@ -61,6 +103,24 @@ def _normalize_feature(feat: dict) -> None:
     # QR features need source="qr" to reference top-level qr config
     if feat.get("type") == "qr" and "source" not in feat:
         feat["source"] = "qr"
+
+    # Asset features need their type preserved for domain factory
+    # Map guard types → frame, trama → pattern (Domain factory doesn't have guard/trama)
+    asset_map = {"guard": "frame", "guard-double": "frame", "trama": "pattern"}
+    if feat.get("type") in asset_map:
+        feat["_original_type"] = feat["type"]
+        feat["type"] = asset_map[feat["type"]]
+        feat["source"] = "asset"
+        if "size" not in feat:
+            feat["size"] = {"width": 85, "height": 54}
+        if feat["type"] == "frame":
+            feat.setdefault("frameStyle", "border")
+            feat.setdefault("width", 1.0)
+            feat.setdefault("inset", 2.0)
+        elif feat["type"] == "pattern":
+            feat.setdefault("patternType", feat.get("_original_type") == "trama" and "dots" or "text-repeat")
+            feat.setdefault("spacing", 6.0)
+            feat.setdefault("rotation", 0)
 
 
 def adapt_to_legacy_config(doc: CardForgeDocument, obj_index: int = 0) -> Dict[str, Any]:
@@ -95,14 +155,20 @@ def adapt_to_legacy_config(doc: CardForgeDocument, obj_index: int = 0) -> Dict[s
         face = obj.faces.get(face_id, {})
         for feat in face.get("features", []):
             if feat.get("type") == "qr":
+                qr_type = feat.get("qrType", "url")
+                qr_value = _build_qr_value(qr_type, feat, doc.variables)
                 qr_config = {
                     "enabled": True,
                     "type": "url",
-                    "target": feat.get("value", doc.variables.get("website", "")),
+                    "target": qr_value,
                     "size": feat.get("size", 24),
                     "errorCorrection": "M",
                     "quietZone": 2,
                 }
+                # Normalize qr size if it's a number
+                if isinstance(qr_config["size"], (int, float)):
+                    s = qr_config["size"]
+                    qr_config["size"] = {"width": s, "height": s}
                 break
         if qr_config["enabled"]:
             break

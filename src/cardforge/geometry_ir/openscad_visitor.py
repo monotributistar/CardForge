@@ -82,22 +82,26 @@ class OpenSCADVisitor(GeometryVisitor):
         )
 
     def visit_SVGNode(self, node: SVGNode) -> None:
-        # For center=true imports, scale so 1-unit = svg native size
+        # Emit a 2D shape — the surrounding ExtrudeNode provides linear_extrude.
+        # Resolve to an absolute path: OpenSCAD resolves relative import() paths
+        # against the .scad file's directory, not the process CWD.
+        file_path = str(Path(node.file_path).resolve())
+        # CardForge assets are authored at true millimetre dimensions
+        # (viewBox units == mm, e.g. a 28mm QR has viewBox "0 0 28 28"), and
+        # OpenSCAD imports 1 SVG user unit as 1 mm — so import at scale 1:1.
+        # Scaling by node.width previously blew geometry up by ~85x.
         self.writer.module_call(
-            "svg_emboss_layer",
-            file=node.file_path,
-            x=0, y=0, z=0,
-            height=1,
-            scale_factor=node.width,
+            "svg_shape_2d",
+            file=file_path,
+            scale_factor=1.0,
         )
 
     def visit_TextNode(self, node: TextNode) -> None:
+        # Emit a 2D shape — the surrounding ExtrudeNode provides linear_extrude.
         self.writer.module_call(
-            "text_emboss_layer",
+            "text_shape_2d",
             text_value=node.text,
-            x=0, y=0, z=0,
             font_size=node.font_size,
-            height=1,
             font_name=node.font,
             halign=node.halign,
             valign=node.valign,

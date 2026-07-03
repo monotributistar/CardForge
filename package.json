@@ -3,9 +3,11 @@
   "private": true,
   "description": "Open Manufacturing Compiler for Flat Objects — Core + Studio monorepo",
   "scripts": {
+    "dev": "echo 'Open two terminals:' && echo '  Terminal 1: pnpm studio:dev' && echo '  Terminal 2: pnpm core:api'",
     "studio:dev": "pnpm --filter @cardforge/studio dev",
     "studio:build": "pnpm --filter @cardforge/studio build",
     "studio:preview": "pnpm --filter @cardforge/studio preview",
+    "core:api": "uv run python scripts/api_server.py",
     "core:test": "uv run pytest tests/ -v",
     "core:prototype": "uv run python scripts/build_prototypes.py"
   },

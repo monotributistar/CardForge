@@ -29,12 +29,16 @@ class GeometryBuilder:
         self,
         card: Card,
         generated_assets: Optional[GeneratedAssets] = None,
+        material_filter: Optional[str] = None,
     ) -> DocumentNode:
         """Convert a Card into a GeometryDocument.
 
         Args:
             card: Populated Card domain object.
             generated_assets: Generated QR/pattern assets for SVG references.
+            material_filter: If set, only include geometry for this material id.
+                The card body (base) is included only when the filter is None or
+                equals "base". Used to produce one STL per material.
 
         Returns:
             A DocumentNode representing the complete geometry tree.
@@ -55,15 +59,17 @@ class GeometryBuilder:
         # ── Base card body ────────────────────────────────────────────────
         root_union = UnionNode(id="card_body")
 
-        # Card base shape
-        base = self._build_card_base(card)
-        root_union.add_child(base)
+        # Card base shape — only in the unfiltered doc or the "base" material.
+        if material_filter is None or material_filter == "base":
+            base = self._build_card_base(card)
+            root_union.add_child(base)
 
         # ── Front face features ───────────────────────────────────────────
         front = card.get_face("front")
         if front:
             front_group = self._build_face_features(
                 card, front, "front", qr_map, pattern_map, is_back=False,
+                material_filter=material_filter,
             )
             if front_group.children:
                 root_union.add_child(front_group)
@@ -73,12 +79,18 @@ class GeometryBuilder:
         if back:
             back_group = self._build_face_features(
                 card, back, "back", qr_map, pattern_map, is_back=True,
+                material_filter=material_filter,
             )
             if back_group.children:
                 root_union.add_child(back_group)
 
         doc.add_child(root_union)
         return doc
+
+    @staticmethod
+    def _feature_material(feature: Feature) -> str:
+        """Material id a feature belongs to (defaults to 'base')."""
+        return feature.material.id if feature.material else "base"
 
     def _build_card_base(self, card: Card) -> ExtrudeNode:
         """Build the card base as an extruded rounded rectangle."""
@@ -104,6 +116,7 @@ class GeometryBuilder:
         qr_map: dict,
         pattern_map: dict,
         is_back: bool,
+        material_filter: Optional[str] = None,
     ) -> GroupNode:
         """Build a group for all features on a face."""
         group = GroupNode(id=f"face_{face_id}")
@@ -111,13 +124,24 @@ class GeometryBuilder:
         half_h = card.height / 2
         thickness = card.thickness
 
+        # Features are always extruded "upward" from the surface they sit on.
+        # The back face is wrapped in mirror([0,0,1]) below, so its features are
+        # built against z=0 (extrude 0..h → mirrored to -h..0, flush on the
+        # bottom face). Front features sit on the top surface (z=thickness).
+        # Using z=thickness for the back too would place them at -(thickness+h),
+        # detached ~thickness mm below the card.
+        z_surface = 0.0 if is_back else thickness
+
         for feature in face.sorted_features():
             if not feature.visible:
                 continue
 
+            if material_filter is not None and self._feature_material(feature) != material_filter:
+                continue
+
             node = self._build_feature_node(
                 card, feature, face_id, half_w, half_h, thickness,
-                qr_map, pattern_map,
+                qr_map, pattern_map, z_surface,
             )
             if node:
                 group.add_child(node)
@@ -139,13 +163,20 @@ class GeometryBuilder:
         thickness: float,
         qr_map: dict,
         pattern_map: dict,
+        z_surface: Optional[float] = None,
     ) -> Optional[GeometryNode]:
-        """Build a geometry node for a single feature."""
+        """Build a geometry node for a single feature.
+
+        z_surface is the z the feature sits on before any face mirror
+        (thickness for the front, 0 for the back). Defaults to thickness.
+        """
         scad_x = feature.position.x - half_w
         scad_y = half_h - feature.position.y
         relief = feature.relief
         mode = relief.mode
-        z_pos = thickness
+        if z_surface is None:
+            z_surface = thickness
+        z_pos = z_surface
         meta = {
             "source_feature": feature.id,
             "material": feature.material.id if feature.material else "base",
@@ -178,6 +209,28 @@ class GeometryBuilder:
                     children=[extruded],
                     metadata=meta,
                 )
+            else:
+                # No asset available — generate placeholder geometry
+                qr_size = feature.size.width or 24
+                height_val = relief.height if mode == ReliefMode.EMBOSS else 0.4
+                rect = RectangleNode(
+                    id=f"qr_rect_{feature.id}",
+                    width=qr_size,
+                    height=qr_size,
+                    metadata=meta,
+                )
+                extruded = ExtrudeNode(
+                    id=f"qr_extrude_{feature.id}",
+                    height=height_val,
+                    children=[rect],
+                    metadata=meta,
+                )
+                return TranslateNode(
+                    id=f"qr_translate_{feature.id}",
+                    x=scad_x, y=scad_y - qr_size, z=z_pos,
+                    children=[extruded],
+                    metadata=meta,
+                )
 
         elif isinstance(feature, PatternFeature):
             stem = f"pattern_{face_id}_{feature.id}"
@@ -199,7 +252,7 @@ class GeometryBuilder:
                     )
                     return TranslateNode(
                         id=f"pattern_translate_{feature.id}",
-                        x=0, y=0, z=thickness - depth_val,
+                        x=0, y=0, z=z_surface - depth_val,
                         children=[extruded],
                         metadata=meta,
                     )
@@ -220,10 +273,13 @@ class GeometryBuilder:
                     )
                     return TranslateNode(
                         id=f"pattern_translate_{feature.id}",
-                        x=0, y=0, z=thickness,
+                        x=0, y=0, z=z_surface,
                         children=[extruded],
                         metadata=meta,
                     )
+            else:
+                # No asset — return empty group (don't skip feature)
+                return GroupNode(id=f"pattern_empty_{feature.id}", metadata=meta)
 
         elif isinstance(feature, TextBlockFeature):
             height_val = relief.height if mode == ReliefMode.EMBOSS else 0.4

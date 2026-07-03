@@ -362,14 +362,13 @@ def generate_material_scad_stage(ctx: Dict[str, Any]) -> StageResult:
         mat_scad_paths = {}
 
         for i, (mat_id, features) in enumerate(sorted(groups.items()), 1):
-            # Build a card subset with only this material's features
-            # We do this by building the full IR then filtering, or
-            # by building specifically for this material group.
-            # Simpler: build full doc and render — the grouped features
-            # already determine what goes into each material SCAD.
-
+            # Build a card subset containing ONLY this material's geometry.
+            # The base body is emitted only for the "base" material; every
+            # other material contains just the features assigned to it.
             builder = GeometryBuilder()
-            document = builder.build(card, assets or GeneratedAssets())
+            document = builder.build(
+                card, assets or GeneratedAssets(), material_filter=mat_id,
+            )
 
             visitor = OpenSCADVisitor(openscad_dir=openscad_dir)
             scad_code = visitor.render(document)

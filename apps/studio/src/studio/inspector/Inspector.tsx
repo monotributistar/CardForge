@@ -1,6 +1,7 @@
 // Inspector — organized property editor for selected feature
 import React from 'react'
 import type { Feature, CardForgeDocument } from '../types'
+import { FIELD_DEFS, type QRType, getQRFields } from '../services/QRFields'
 
 interface InspectorProps {
   selectedFeature: Feature | null
@@ -11,6 +12,8 @@ interface InspectorProps {
   onUpdateRelief: (featureId: string, height: number) => void
   onUpdateMaterial: (featureId: string, mat: string) => void
   onUpdateQRValue: (featureId: string, value: string) => void
+  onUpdateQRType: (featureId: string, type: string) => void
+  onUpdateQRField: (featureId: string, field: string, value: string) => void
   onUpdateQRSize: (featureId: string, size: number) => void
   onUpdatePosX: (featureId: string, x: number) => void
   onUpdatePosY: (featureId: string, y: number) => void
@@ -111,15 +114,59 @@ export const Inspector: React.FC<InspectorProps> = (props) => {
   }
 
   if (f && f.type === 'qr') {
+    const qrType = ((f as any).qrType || 'url') as QRType
+    const fields = getQRFields(f)
+    const defs = FIELD_DEFS[qrType]
     return (
       <div>
         <Section t="📝 QR Code">
-          <Row l="URL"><input style={{ ...S.input, width: '100%' }}
-            value={(f as any).value ?? ''}
-            onChange={e => props.onUpdateQRValue(f.id, e.target.value)} placeholder="https://..." /></Row>
-          <Row l="Size mm"><input type="number" style={S.input} step={1} min={16} max={40}
+          <Row l="Type">
+            <select style={{ ...S.select, width: 100 }} value={qrType}
+              onChange={e => props.onUpdateQRType(f.id, e.target.value)}>
+              <option value="url">Link</option>
+              <option value="vcard">vCard</option>
+              <option value="wifi">WiFi</option>
+              <option value="email">Email</option>
+              <option value="text">Text</option>
+            </select>
+          </Row>
+          {defs.map(d => {
+            const val = (fields as any)[d.key] || ''
+            if (d.type === 'select') {
+              return <Row key={d.key} l={d.label}>
+                <select style={{ ...S.select, width: 100 }} value={val}
+                  onChange={e => (props as any).onUpdateQRField(f.id, d.key, e.target.value)}>
+                  <option value="WPA">WPA</option>
+                  <option value="WEP">WEP</option>
+                  <option value="nopass">Open</option>
+                </select>
+              </Row>
+            }
+            if (d.type === 'textarea') {
+              return <div key={d.key} style={{ marginBottom: 6 }}>
+                <div style={{ fontSize: 11, color: '#8b949e', marginBottom: 2 }}>{d.label}</div>
+                <textarea style={{ ...S.textarea, minHeight: 40 }} value={val}
+                  onChange={e => (props as any).onUpdateQRField(f.id, d.key, e.target.value)}
+                  placeholder={d.placeholder} />
+              </div>
+            }
+            return <Row key={d.key} l={d.label}>
+              <input style={{ ...S.input, width: '100%' }} value={val}
+                onChange={e => (props as any).onUpdateQRField(f.id, d.key, e.target.value)}
+                placeholder={d.placeholder} />
+            </Row>
+          })}
+          <Row l="Size mm"><input type="number" style={S.input} step={1} min={16} max={60}
             value={typeof f.size === 'number' ? f.size : (f.size as any)?.width ?? 24}
             onChange={e => props.onUpdateQRSize(f.id, parseInt(e.target.value) || 24)} /></Row>
+          <Row l="Material">
+            <select style={S.select} value={f.material ?? 'text'}
+              onChange={e => props.onUpdateMaterial(f.id, e.target.value)}>
+              <option value="text">Text / White</option>
+              <option value="base">Base / Dark</option>
+              <option value="accent">Accent / Gold</option>
+            </select>
+          </Row>
         </Section>
         <Section t="📐 Position">
           <Row l="X mm"><input type="number" style={S.input} step={0.1} value={f.position?.x ?? 0}

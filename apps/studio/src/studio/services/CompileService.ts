@@ -9,6 +9,8 @@
 
 import type { CardForgeDocument, ManufacturingReport, Feature } from '../../types/cardforge'
 import { renderQRSVG } from './QRGenerator'
+import { formatQRValue, getQRFields, type QRType } from './QRFields'
+import { renderAssetSVG } from './AssetTypes'
 
 // ── SVG Generation ──────────────────────────────────────────────────────
 
@@ -26,7 +28,7 @@ function svgHeader(w: number, h: number): string {
 
 function svgFooter(): string { return '</svg>' }
 
-function compileFaceSVG(doc: CardForgeDocument, faceId: string): string {
+async function compileFaceSVG(doc: CardForgeDocument, faceId: string): Promise<string> {
   const obj = doc.objects[0]
   if (!obj) return ''
   const face = obj.faces[faceId]
@@ -44,6 +46,9 @@ function compileFaceSVG(doc: CardForgeDocument, faceId: string): string {
   parts.push(svgHeader(w, h))
   parts.push(`<rect x="0" y="0" width="${w}" height="${h}" rx="${r}" fill="${baseColor}"/>`)
 
+  // Collect async QR promises
+  const qrPromises: Promise<{ idx: number; svg: string }>[] = []
+
   for (const feat of face.features) {
     const x = (feat.position?.x ?? 0) * PX_PER_MM
     const y = (feat.position?.y ?? 0) * PX_PER_MM
@@ -60,15 +65,33 @@ function compileFaceSVG(doc: CardForgeDocument, faceId: string): string {
         parts.push(`<text x="${ax}" y="${ly}" font-family="${feat.font ?? 'sans-serif'}" font-size="${fs}" font-weight="${feat.fontStyle ?? 'normal'}" fill="${color}" text-anchor="${anchor}">${text}</text>`)
       }
     } else if (feat.type === 'qr') {
-      const qrValue = resolveText(feat.value ?? '', vars)
+      const qrType = ((feat as any).qrType || 'url') as QRType
+      const fields = getQRFields(feat)
+      const qrValue = formatQRValue(qrType, fields)
       const qrSizeMM = typeof feat.size === 'number' ? feat.size : (feat.size as any)?.width ?? 24
-      const qrSvg = renderQRSVG(qrValue || 'cardforge', qrSizeMM, 2, PX_PER_MM)
-      parts.push(`<g transform="translate(${x},${y})">${qrSvg}</g>`)
+      const bgColor = feat.material === 'base' ? baseColor : feat.material === 'accent' ? accentColor : '#ffffff'
+      const qrColor = feat.material === 'base' ? '#ffffff' : '#000000'
+      const idx = parts.length
+      parts.push('')
+      qrPromises.push(
+        renderQRSVG(qrValue, qrSizeMM, 2, PX_PER_MM, bgColor, qrColor).then(svg => ({ idx, svg: `<g transform="translate(${x},${y})">${svg}</g>` }))
+      )
     } else if (feat.type === 'pattern') {
       parts.push(`<rect x="0" y="0" width="${w}" height="${h}" fill="none" stroke="${textColor}" stroke-width="${0.5 * PX_PER_MM}" opacity="0.15"/>`)
       parts.push(`<text x="${w/2}" y="${h/2}" font-size="${24 * PX_PER_MM}" fill="${textColor}" opacity="0.1" text-anchor="middle" transform="rotate(-25,${w/2},${h/2})">${feat.text ?? ''}</text>`)
+    } else if (['guard', 'guard-double', 'frame', 'corner', 'trama', 'svg-decor'].includes(feat.type)) {
+      parts.push(renderAssetSVG(feat, obj.width, obj.height, PX_PER_MM, color))
     }
   }
+  
+  // Wait for QR promises and fill placeholders
+  if (qrPromises.length > 0) {
+    const results = await Promise.all(qrPromises)
+    for (const { idx, svg } of results) {
+      parts[idx] = svg
+    }
+  }
+  
   parts.push(svgFooter())
   return parts.join('\n')
 }
@@ -124,9 +147,11 @@ export interface CompileResult {
   report: ManufacturingReport
 }
 
-export function compileLive(doc: CardForgeDocument): CompileResult {
-  const frontSvg = compileFaceSVG(doc, 'front')
-  const backSvg = compileFaceSVG(doc, 'back')
+export async function compileLive(doc: CardForgeDocument): Promise<CompileResult> {
+  const [frontSvg, backSvg] = await Promise.all([
+    compileFaceSVG(doc, 'front'),
+    compileFaceSVG(doc, 'back'),
+  ])
 
   const analysis = analyzeDocument(doc)
 
