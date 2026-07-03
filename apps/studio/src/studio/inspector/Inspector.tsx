@@ -9,6 +9,18 @@ import type {
 } from '../../types/cardforge'
 import { useDocumentStore, getActiveTab, findFeature, removeFeatures } from '../../state/DocumentStore'
 import { FIELD_DEFS, QR_TYPE_LABELS, type QRType } from '../services/QRFields'
+import { listFonts, type FontInfo } from '../core/CoreClient'
+
+// Font families the Core can render — fetched once, cached in CoreClient.
+function useFonts(): FontInfo[] {
+  const [fonts, setFonts] = React.useState<FontInfo[]>([])
+  React.useEffect(() => {
+    let alive = true
+    listFonts().then(f => { if (alive) setFonts(f) })
+    return () => { alive = false }
+  }, [])
+  return fonts
+}
 
 type ApplyEdit = (mutator: (doc: DocumentV2) => void) => void
 
@@ -220,11 +232,25 @@ const TextBlockEditor: React.FC<{ feature: TextBlockFeature; edit: EditFn }> = (
   </>
 )
 
-const FontEditor: React.FC<{ feature: TextBlockFeature | TextPatternFeature; edit: EditFn; weight?: boolean }> = ({ feature, edit, weight }) => (
+const FontEditor: React.FC<{ feature: TextBlockFeature | TextPatternFeature; edit: EditFn; weight?: boolean }> = ({ feature, edit, weight }) => {
+  const fonts = useFonts()
+  const current = feature.font.family
+  const isVariable = fonts.find(f => f.family === current)?.variable ?? false
+  // Always include the current family so a font the Core doesn't have still
+  // shows (flagged), rather than silently vanishing from the dropdown.
+  const known = fonts.some(f => f.family === current)
+  const options: [string, string][] = [
+    ...(known ? [] : [[current, `${current} (not installed)`] as [string, string]]),
+    ...fonts.map(f => [f.family, f.variable ? `${f.family} · var` : f.family] as [string, string]),
+  ]
+  return (
   <Section title="Font">
     <Row label="Family">
-      <TextInput value={feature.font.family}
-        onCommit={v => edit<TextBlockFeature | TextPatternFeature>(f => { f.font.family = v })} />
+      {fonts.length > 0
+        ? <Select value={current} options={options}
+            onCommit={v => edit<TextBlockFeature | TextPatternFeature>(f => { f.font.family = v })} />
+        : <TextInput value={current}
+            onCommit={v => edit<TextBlockFeature | TextPatternFeature>(f => { f.font.family = v })} />}
     </Row>
     <Row label="Size (mm)"><NumInput value={feature.font.size} step={0.5} onCommit={v => edit<TextBlockFeature | TextPatternFeature>(f => { f.font.size = v })} /></Row>
     {weight && (
@@ -232,6 +258,11 @@ const FontEditor: React.FC<{ feature: TextBlockFeature | TextPatternFeature; edi
         <NumInput value={feature.font.weight ?? 400} step={50} min={100} max={900}
           onCommit={v => edit<TextBlockFeature>(f => { f.font.weight = v })} />
       </Row>
+    )}
+    {weight && !isVariable && current && known && (
+      <div style={{ fontSize: 10, color: '#8b949e', padding: '0 0 2px' }}>
+        Weight/axes apply only to variable fonts (marked · var)
+      </div>
     )}
     <Row label="Italic">
       <input type="checkbox" checked={feature.font.italic === true}
@@ -248,7 +279,8 @@ const FontEditor: React.FC<{ feature: TextBlockFeature | TextPatternFeature; edi
       />
     </Row>
   </Section>
-)
+  )
+}
 
 // ── text-pattern ─────────────────────────────────────────────────────
 

@@ -142,3 +142,27 @@ export async function checkHealth(): Promise<boolean> {
     return false
   }
 }
+
+export interface FontInfo { family: string; variable: boolean }
+
+let _fontsCache: FontInfo[] | null = null
+let _fontsPromise: Promise<FontInfo[]> | null = null
+
+/** GET /api/fonts — families the Core can render (cached for the session). */
+export async function listFonts(): Promise<FontInfo[]> {
+  if (_fontsCache) return _fontsCache
+  if (!_fontsPromise) {
+    _fontsPromise = (async () => {
+      try {
+        const res = await fetch(`${CORE_BASE_URL}/api/fonts`)
+        if (!res.ok) return []
+        const data = await res.json()
+        _fontsCache = (data?.fonts ?? []) as FontInfo[]
+        return _fontsCache
+      } catch {
+        return []
+      }
+    })()
+  }
+  return _fontsPromise
+}

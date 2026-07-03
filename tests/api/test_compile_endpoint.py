@@ -86,3 +86,16 @@ class TestMigrate:
         v2 = client.post("/api/migrate", json={"document": example_doc()}).json()["document"]
         r = client.post("/api/migrate", json={"document": v2})
         assert r.json()["migrated"] is False
+
+
+class TestFonts:
+    def test_lists_fonts(self):
+        r = client.get("/api/fonts")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["ok"] is True
+        fams = [f["family"] for f in body["fonts"]]
+        assert len(fams) > 5
+        assert all(not f.startswith(".") for f in fams), "internal fonts excluded"
+        assert fams == sorted(fams, key=str.lower), "sorted"
+        assert all({"family", "variable"} <= set(f) for f in body["fonts"])

@@ -80,6 +80,22 @@ def font_index() -> Dict[str, FontFace]:
     return index
 
 
+def list_families() -> List[dict]:
+    """User-facing font list: the families the kernel can actually render.
+
+    Internal/hidden families (leading '.', e.g. '.SF NS') are omitted. Each
+    entry is {family, variable} so the editor can offer only real, renderable
+    fonts and flag the ones with weight/axis support.
+    """
+    by_family: Dict[str, bool] = {}
+    for face in font_index().values():
+        if face.family.startswith("."):
+            continue
+        by_family[face.family] = by_family.get(face.family, False) or face.is_variable
+    return [{"family": fam, "variable": var}
+            for fam, var in sorted(by_family.items(), key=lambda kv: kv[0].lower())]
+
+
 def resolve_family(family: str) -> FontFace:
     idx = font_index()
     face = idx.get(family.lower())

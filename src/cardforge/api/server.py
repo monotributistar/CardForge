@@ -91,6 +91,14 @@ def health():
             "timestamp": datetime.now().isoformat()}
 
 
+@app.get("/api/fonts")
+def api_fonts():
+    """Font families the kernel can render — for the editor's font picker."""
+    from cardforge.kernel.fonts import list_families
+
+    return {"ok": True, "fonts": list_families()}
+
+
 @app.post("/api/migrate")
 def api_migrate(body: dict):
     """Normalize any document (v1 or v2) to validated v2 — the Studio uses
