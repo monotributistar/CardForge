@@ -37,15 +37,37 @@ class ManufacturingProfile:
     ])
 
     @classmethod
+    def for_nozzle(cls, nozzle: float, layer_height: float = 0.2,
+                   process: str = "fdm", material: str = "PLA") -> "ManufacturingProfile":
+        """Derive an FDM profile from the actual nozzle diameter.
+
+        The minimum printable XY detail is the nozzle: a single extruded line
+        cannot be narrower than the nozzle. Walls want two perimeters, and
+        legibility/robustness want a margin above the raw minimum.
+        """
+        n = max(0.05, nozzle)
+        return cls(
+            process=process,
+            nozzle=n,
+            layer_height=layer_height,
+            material=material,
+            printer_name=f"Generic FDM {n:.2f}mm",
+            min_line_width=n,                       # a single line == the nozzle
+            min_wall=round(2 * n, 3),               # two perimeters
+            min_gap=n,                              # features must clear by a nozzle
+            min_emboss=round(max(1.5 * layer_height, 0.3), 3),
+            min_deboss=round(max(layer_height, 0.15), 3),
+            max_deboss=round(max(2 * layer_height, 0.4), 3),
+            min_qr_module=round(1.25 * n, 3),       # a module needs a clean line + edge
+            min_qr_size=22.0,
+            min_text_size=round(max(2.5, 6 * n), 3),
+            min_text_stroke=round(1.25 * n, 3),
+        )
+
+    @classmethod
     def fdm_standard(cls) -> "ManufacturingProfile":
         """Standard FDM profile with 0.4mm nozzle."""
-        return cls(
-            process="fdm",
-            nozzle=0.4,
-            layer_height=0.20,
-            material="PLA",
-            printer_name="Generic FDM 0.4mm",
-        )
+        return cls.for_nozzle(0.4, layer_height=0.20)
 
     @classmethod
     def fdm_fine(cls) -> "ManufacturingProfile":

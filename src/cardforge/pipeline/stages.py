@@ -84,10 +84,13 @@ def constraints_stage(ctx: Dict[str, Any]) -> StageResult:
 
 
 def manufacturing_stage(ctx: Dict[str, Any]) -> StageResult:
-    from cardforge.manufacturing.analyzer import ManufacturingAnalyzer, profile_by_name
+    from cardforge.manufacturing.analyzer import (
+        ManufacturingAnalyzer, profile_by_name, resolve_profile)
     from cardforge.manufacturing.formatter import format_report_console
 
-    profile = profile_by_name(ctx.get("manufacturing_profile", "fdm-standard"))
+    # An explicit profile override wins; otherwise derive from the document nozzle.
+    override = ctx.get("manufacturing_profile")
+    profile = profile_by_name(override) if override else resolve_profile(ctx["document"])
     analyzer = ManufacturingAnalyzer(profile)
     report = analyzer.analyze(ctx["document"], ctx["scene"], ctx["trace"])
     ctx["manufacturing_report"] = report

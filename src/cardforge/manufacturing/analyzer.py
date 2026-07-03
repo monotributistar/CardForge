@@ -18,6 +18,7 @@ from cardforge.manufacturing.report import ManufacturingReport
 from cardforge.manufacturing.rules import (
     check_deboss_depth,
     check_emboss_height,
+    check_min_detail,
     check_qr_module_size,
     check_qr_size,
     check_text_size,
@@ -53,6 +54,12 @@ class ManufacturingAnalyzer:
         nid = r.feature_id
 
         issues.extend(check_unsupported_relief(r.relief_mode, nid, p))
+
+        # Thinnest measured wall/stroke vs the nozzle (from kernel/measure).
+        min_width = float(r.extra.get("min_width_mm", 0.0))
+        if min_width > 0:
+            metrics.min_wall = min(metrics.min_wall, min_width)
+            issues.extend(check_min_detail(min_width, nid, p, feature_type=r.type))
 
         if r.relief_mode == "emboss":
             metrics.update_emboss(r.relief_value)
@@ -92,3 +99,21 @@ def profile_by_name(name: str) -> ManufacturingProfile:
         "sla-standard": ManufacturingProfile.sla_standard,
     }
     return profiles.get(name, ManufacturingProfile.fdm_standard)()
+
+
+def resolve_profile(doc: DocumentV2) -> ManufacturingProfile:
+    """Build the manufacturing profile from the document.
+
+    The nozzle drives the thresholds: fdm/laser/cnc derive from the actual
+    nozzle diameter (so changing it actually changes the alerts); SLA has no
+    nozzle and uses its resin preset. A named profile with no nozzle falls
+    back to the preset by name.
+    """
+    mf = doc.manufacturing
+    process = (mf.process or "fdm").lower()
+    if process == "sla":
+        return ManufacturingProfile.sla_standard()
+    if mf.nozzle and mf.nozzle > 0:
+        return ManufacturingProfile.for_nozzle(
+            mf.nozzle, layer_height=mf.layer_height or 0.2, process=process)
+    return profile_by_name(mf.profile or "fdm-standard")

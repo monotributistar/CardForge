@@ -21,6 +21,43 @@ def check_line_width(
     return issues
 
 
+def check_min_detail(
+    min_width: float, node_id: str, profile: ManufacturingProfile,
+    feature_type: str = "",
+) -> List[ManufacturingIssue]:
+    """Check a feature's thinnest measured wall/stroke against the nozzle.
+
+    A line thinner than the nozzle cannot be extruded cleanly:
+      - below half the nozzle it effectively won't print → ERROR;
+      - between half and one nozzle it prints under-extruded / merged → WARNING.
+    `min_width` comes from the kernel (kernel/measure.min_feature_width).
+    A value of 0 means "not measured" (e.g. cuts) and is skipped.
+    """
+    issues: List[ManufacturingIssue] = []
+    nozzle = profile.min_line_width
+    if min_width <= 0 or nozzle <= 0:
+        return issues
+    what = "stroke" if feature_type in ("text-block", "text-pattern") else "detail"
+    if min_width < 0.5 * nozzle:
+        issues.append(ManufacturingIssue(
+            code=IssueCode.MIN_DETAIL, severity=Severity.ERROR,
+            message=f"Thinnest {what} {min_width:.2f}mm is far below the "
+                    f"{nozzle:.2f}mm nozzle — it will not print",
+            node_id=node_id, value=min_width, threshold=nozzle,
+            suggestion=f"Make the thinnest part at least {nozzle:.2f}mm "
+                       "(enlarge, thicken the stroke, or use a finer nozzle)",
+        ))
+    elif min_width < nozzle:
+        issues.append(ManufacturingIssue(
+            code=IssueCode.MIN_DETAIL, severity=Severity.WARNING,
+            message=f"Thinnest {what} {min_width:.2f}mm is below the "
+                    f"{nozzle:.2f}mm nozzle — detail will be under-extruded",
+            node_id=node_id, value=min_width, threshold=nozzle,
+            suggestion=f"Aim for at least {nozzle:.2f}mm of thickness",
+        ))
+    return issues
+
+
 def check_wall_thickness(
     width: float, node_id: str, profile: ManufacturingProfile,
 ) -> List[ManufacturingIssue]:

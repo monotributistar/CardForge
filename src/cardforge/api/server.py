@@ -116,7 +116,7 @@ def api_compile(body: dict):
     """Compile a document for live preview. Fast path — no files touched."""
     from cardforge.document.schema_v2 import DocumentValidationError
     from cardforge.export.threemf import scene_to_3mf
-    from cardforge.manufacturing.analyzer import ManufacturingAnalyzer, profile_by_name
+    from cardforge.manufacturing.analyzer import ManufacturingAnalyzer, resolve_profile
 
     try:
         doc = _load_document(body.get("document") or {})
@@ -128,9 +128,7 @@ def api_compile(body: dict):
     try:
         scene, trace, issues = _compile(doc)
         threemf = scene_to_3mf(scene, doc.materials, title=doc.meta.name)
-        profile = profile_by_name(body.get("profile")
-                                  or doc.manufacturing.profile)
-        report = ManufacturingAnalyzer(profile).analyze(doc, scene, trace)
+        report = ManufacturingAnalyzer(resolve_profile(doc)).analyze(doc, scene, trace)
     except Exception as e:  # compile errors are server-side bugs → 500
         return _error(500, f"Compile failed: {e}")
 
@@ -163,7 +161,7 @@ def api_export(body: dict):
     from cardforge.export.stl import scene_to_stls
     from cardforge.export.threemf import scene_to_3mf
     from cardforge.kernel.types import Severity
-    from cardforge.manufacturing.analyzer import ManufacturingAnalyzer, profile_by_name
+    from cardforge.manufacturing.analyzer import ManufacturingAnalyzer, resolve_profile
 
     try:
         doc = _load_document(body.get("document") or {})
@@ -178,8 +176,7 @@ def api_export(body: dict):
     try:
         scene, trace, issues = _compile(doc)
         errors = [i for i in issues if i.severity == Severity.ERROR]
-        profile = profile_by_name(body.get("profile") or doc.manufacturing.profile)
-        report = ManufacturingAnalyzer(profile).analyze(doc, scene, trace)
+        report = ManufacturingAnalyzer(resolve_profile(doc)).analyze(doc, scene, trace)
 
         if (errors or report.has_errors) and not ignore_errors:
             return _error(

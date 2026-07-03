@@ -21,6 +21,7 @@ from manifold3d import CrossSection
 from cardforge.document.schema_v2 import DocumentV2, Feature
 from cardforge.kernel import patterns as pat
 from cardforge.kernel import shapes2d as s2
+from cardforge.kernel.measure import min_feature_width
 from cardforge.kernel.qr import format_qr_payload, qr_cross_section
 from cardforge.kernel.svg import SVGParseError, load_svg_file, svg_to_color_shapes
 from cardforge.kernel.text import text_block
@@ -189,6 +190,11 @@ def build_feature_shapes(doc: DocumentV2, face_id: str, feature: Feature,
     union = non_empty[0]
     for cs in non_empty[1:]:
         union = union + cs
+
+    # Thinnest printable detail (mm) — compared against the nozzle downstream.
+    # Cuts are holes; their "width" isn't a printable wall, so skip.
+    if f.relief.mode != "cut":
+        extra["min_width_mm"] = round(min_feature_width(union), 3)
 
     relief_value = (f.relief.height if f.relief.mode == "emboss"
                     else 0.0 if f.relief.mode == "cut" else f.relief.depth)

@@ -18,6 +18,7 @@ class IssueCode(str, Enum):
     # Geometry
     MIN_LINE_WIDTH = "min_line_width"
     MIN_WALL_THICKNESS = "min_wall_thickness"
+    MIN_DETAIL = "min_detail"  # thinnest measured stroke/wall vs nozzle
     MIN_GAP = "min_gap"
     OUTSIDE_BOUNDS = "outside_bounds"
 
