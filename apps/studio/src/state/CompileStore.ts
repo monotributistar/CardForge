@@ -13,6 +13,7 @@ import {
   type ManufacturingSummary,
   type CompileStats,
   type MaterialReport,
+  type PartReport,
 } from '../studio/core/CoreClient'
 import { useDocumentStore, type DocumentStoreState } from './DocumentStore'
 
@@ -25,6 +26,7 @@ export interface CompileStoreState {
   manufacturing: ManufacturingSummary | null
   stats: CompileStats | null
   materials: MaterialReport[]
+  parts: PartReport[]
   error: string | null
 }
 
@@ -35,6 +37,7 @@ const EMPTY: CompileStoreState = {
   manufacturing: null,
   stats: null,
   materials: [],
+  parts: [],
   error: null,
 }
 
@@ -87,6 +90,22 @@ function activeDoc(state: DocumentStoreState): DocumentV2 | null {
   return tab?.doc ?? null
 }
 
+// Trace warnings arrive as "face/featureId: message" strings (skipped
+// features, degenerate patterns…). Surface them next to the constraints
+// so a silently-dropped feature is visible in the Issues panel.
+function traceWarningIssues(warnings: string[] | undefined): ConstraintIssue[] {
+  return (warnings ?? []).map(w => {
+    const m = w.match(/^(front|back)\/([^:]+): (.*)$/)
+    return {
+      severity: 'warning' as const,
+      code: 'feature-skipped',
+      message: m ? m[3] : w,
+      featureId: m?.[2],
+      faceId: m?.[1],
+    }
+  })
+}
+
 async function runCompile(doc: DocumentV2): Promise<void> {
   const requestId = ++requestCounter
   useCompileStore.setState({ status: 'compiling', error: null })
@@ -97,10 +116,11 @@ async function runCompile(doc: DocumentV2): Promise<void> {
       useCompileStore.setState({
         status: 'ok',
         model3mfB64: res.model3mfBase64,
-        constraints: res.constraints ?? [],
+        constraints: [...(res.constraints ?? []), ...traceWarningIssues(res.warnings)],
         manufacturing: res.manufacturing ?? null,
         stats: res.stats ?? null,
         materials: res.materials ?? [],
+        parts: res.parts ?? [],
         error: null,
       })
     } else {

@@ -63,11 +63,35 @@ class TestPlacement:
         cs = place(rect(4, 2), 10, 20)
         assert bounds_of(cs) == pytest.approx((10, 18, 14, 20))
 
-    def test_place_rotates_around_anchor(self):
+    def test_place_rotates_around_shape_center(self):
         cs = place(rect(4, 2), 10, 20, rotation_deg=90)
-        # 90° CCW around anchor: content x∈[0,4],y∈[-2,0] → x∈[0,2],y∈[0,4]
-        assert bounds_of(cs) == pytest.approx((10, 20, 12, 24), abs=1e-6)
+        # unrotated bounds (10,18,14,20), center (12,19); 90° swaps w/h
+        # around that center — the same pivot the 2D editor uses
+        assert bounds_of(cs) == pytest.approx((11, 17, 13, 21), abs=1e-6)
 
     def test_place_scales(self):
         cs = place(rect(4, 2), 0, 0, scale=2.0)
         assert cs.area() == pytest.approx(32)
+
+
+class TestPlaceRotationPivot:
+    def test_rotation_pivots_on_shape_center(self):
+        """Rotation must spin the shape in place (bbox center pivot) — the
+        same behavior the 2D editor shows — not swing it around the anchor."""
+        from cardforge.kernel.shapes2d import place, rect
+        r = rect(20, 10)
+        straight = place(r, 30, 25)
+        turned = place(r, 30, 25, rotation_deg=90)
+        sb, tb = straight.bounds(), turned.bounds()
+        s_center = ((sb[0] + sb[2]) / 2, (sb[1] + sb[3]) / 2)
+        t_center = ((tb[0] + tb[2]) / 2, (tb[1] + tb[3]) / 2)
+        assert t_center == pytest.approx(s_center, abs=1e-9)
+        # 90°: width/height swap around that same center
+        assert (tb[2] - tb[0], tb[3] - tb[1]) == pytest.approx((10.0, 20.0))
+
+    def test_180_rotation_keeps_footprint(self):
+        from cardforge.kernel.shapes2d import place, rect
+        r = rect(14, 6)
+        a = place(r, 10, 10)
+        b = place(r, 10, 10, rotation_deg=180)
+        assert (a ^ b).area() == pytest.approx(a.area(), rel=1e-9)

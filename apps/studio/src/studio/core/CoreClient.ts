@@ -6,7 +6,10 @@
 
 import type { DocumentV2 } from '../../types/cardforge'
 
-export const CORE_BASE_URL = 'http://localhost:9000'
+// Core API endpoint — override per environment at build time
+// (e.g. VITE_CORE_URL=https://cardforge-core.minarai.xyz for the public build).
+export const CORE_BASE_URL: string =
+  import.meta.env.VITE_CORE_URL ?? 'http://localhost:9000'
 
 // ── Response types ───────────────────────────────────────────────────
 
@@ -45,6 +48,20 @@ export interface MaterialReport {
   volumeMm3: number
 }
 
+export interface PartReport {
+  id: string
+  /** Exact 3MF object name — matches the mesh names the viewer sees. */
+  label: string
+  /** Feature this part came from (null for the base body). */
+  featureId: string | null
+  material: string
+  slot?: number | null
+  /** [width, depth, height] in mm. */
+  sizeMm: [number, number, number]
+  /** [zMin, zMax] in mm, bed at 0. */
+  zMm: [number, number]
+}
+
 export interface CompileResponse {
   ok: boolean
   model3mfBase64: string
@@ -54,6 +71,7 @@ export interface CompileResponse {
   manufacturing: ManufacturingSummary
   stats: CompileStats
   materials: MaterialReport[]
+  parts: PartReport[]
 }
 
 export interface MigrateResponse {
@@ -143,7 +161,7 @@ export async function checkHealth(): Promise<boolean> {
   }
 }
 
-export interface FontInfo { family: string; variable: boolean }
+export interface FontInfo { family: string; variable: boolean; weights?: number[] }
 
 let _fontsCache: FontInfo[] | null = null
 let _fontsPromise: Promise<FontInfo[]> | null = null

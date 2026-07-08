@@ -170,7 +170,9 @@
       "properties": {
         "mode": { "enum": ["auto", "on", "off"] },
         "thickness": { "type": "number", "exclusiveMinimum": 0 },
-        "material": { "type": "string", "minLength": 1 }
+        "material": { "type": "string", "minLength": 1 },
+        "padding": { "type": "number", "minimum": 0 },
+        "shape": { "enum": ["rect", "circle"] }
       }
     },
     "transform": {
@@ -254,7 +256,7 @@
       "required": ["id", "type", "transform", "material", "relief"],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
-        "type": { "enum": ["text-block", "text-pattern", "pattern", "qr", "icon", "shape"] },
+        "type": { "enum": ["text-block", "text-pattern", "pattern", "qr", "icon", "shape", "hole"] },
         "name": { "type": "string" },
         "transform": { "$ref": "#/$defs/transform" },
         "material": { "type": "string", "minLength": 1 },
@@ -287,6 +289,7 @@
                 "text": { "type": "string", "minLength": 1 },
                 "font": { "$ref": "#/$defs/font" },
                 "spacing": { "type": "number", "exclusiveMinimum": 0 },
+                "spacingY": { "type": "number", "exclusiveMinimum": 0 },
                 "angle": { "type": "number" }
               },
               "required": ["type", "text", "font", "spacing"]
@@ -295,13 +298,16 @@
               "type": "object",
               "properties": {
                 "type": { "const": "pattern" },
-                "patternType": { "enum": ["dots", "lines", "grid", "hex"] },
+                "patternType": { "enum": ["dots", "lines", "grid", "hex", "svg"] },
                 "spacing": { "type": "number", "exclusiveMinimum": 0 },
+                "spacingY": { "type": "number", "exclusiveMinimum": 0 },
                 "angle": { "type": "number" },
                 "elementSize": { "type": "number", "exclusiveMinimum": 0 },
                 "region": { "enum": ["face", "bounds"] },
                 "width": { "type": "number", "exclusiveMinimum": 0 },
-                "height": { "type": "number", "exclusiveMinimum": 0 }
+                "height": { "type": "number", "exclusiveMinimum": 0 },
+                "svgInline": { "type": "string" },
+                "colorMap": { "type": "object", "additionalProperties": { "type": "string" } }
               },
               "required": ["type", "patternType", "spacing"]
             },
@@ -350,6 +356,19 @@
                 "svgPath": { "type": "string" }
               },
               "required": ["type", "shapeType"]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": { "const": "hole" },
+                "holeType": { "enum": ["circle", "slot"] },
+                "diameter": { "type": "number", "exclusiveMinimum": 0 },
+                "width": { "type": "number", "exclusiveMinimum": 0 },
+                "height": { "type": "number", "exclusiveMinimum": 0 },
+                "tab": { "type": "boolean" },
+                "tabMargin": { "type": "number", "exclusiveMinimum": 0 }
+              },
+              "required": ["type", "holeType"]
             }
           ]
         }

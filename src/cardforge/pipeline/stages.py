@@ -122,13 +122,24 @@ def export_stl_stage(ctx: Dict[str, Any]) -> StageResult:
 
 
 def write_outputs_stage(ctx: Dict[str, Any]) -> StageResult:
-    """Persist exports to exports_dir/<doc-id>/ and write the report files."""
+    """Persist exports to exports_dir/<doc-id>/ and write the report files.
+
+    The stl/ subdir and root *.3mf files are wholly owned by this stage, so
+    stale files from earlier runs (renamed materials, old pipeline layouts)
+    are removed first — leftovers would get imported into the slicer
+    alongside the fresh parts.
+    """
+    import shutil
+
     from cardforge.manufacturing.export_report import (
         export_report_json, export_report_markdown)
 
     doc = ctx["document"]
     out_root = Path(ctx.get("exports_dir", "exports")) / doc.meta.id
     out_root.mkdir(parents=True, exist_ok=True)
+    shutil.rmtree(out_root / "stl", ignore_errors=True)
+    for stale in out_root.glob("*.3mf"):
+        stale.unlink()
     written = []
 
     threemf = ctx.get("threemf_bytes")

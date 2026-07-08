@@ -18,8 +18,10 @@ from manifold3d import CrossSection, JoinType
 # measurement from ~270ms to ~6ms for a full text block.
 _SIMPLIFY_MM = 0.04
 _HI_MM = 2.0          # widths at/above this are "thick"; nozzles never care
-_ITERS = 5
-_LOSS_TOL = 0.04      # ignore the tiny area a round open() shaves off corners
+_ITERS = 7
+_BASELINE_T = 0.08    # corner-loss calibration probe (below any real nozzle)
+_EXCESS_TOL = 0.03    # area fraction lost beyond the corner baseline
+_CORNER_CAP = 0.2     # corner shedding saturates; never credit more than this
 
 
 def min_feature_width(cs: CrossSection, hi: float = _HI_MM,
@@ -30,6 +32,12 @@ def min_feature_width(cs: CrossSection, hi: float = _HI_MM,
     and ~0 when the shape is a hairline that erosion erases entirely.
     Width is invariant to translation/rotation/mirror, so it is safe to
     measure a feature in its pre-placement pose.
+
+    Corners and glyph tips shed a little area under a round opening even
+    when every stroke is thick — quadratically in t, and proportionally to
+    how many corners the shape has (long text!). That shedding is measured
+    at a probe width no nozzle cares about and extrapolated, so only loss
+    in EXCESS of it — an actual stroke vanishing — moves the estimate.
     """
     if cs.is_empty():
         return 0.0
@@ -38,10 +46,16 @@ def min_feature_width(cs: CrossSection, hi: float = _HI_MM,
     if total <= 1e-9:
         return 0.0
 
-    def loses(t: float) -> bool:
+    def loss(t: float) -> float:
         opened = (shape.offset(-t / 2, JoinType.Round)
                        .offset(t / 2, JoinType.Round))
-        return (total - opened.area()) / total > _LOSS_TOL
+        return (total - opened.area()) / total
+
+    base = loss(_BASELINE_T)
+
+    def loses(t: float) -> bool:
+        corner_est = min(base * (t / _BASELINE_T) ** 2, _CORNER_CAP)
+        return loss(t) - corner_est > _EXCESS_TOL
 
     if not loses(hi):
         return hi

@@ -160,16 +160,23 @@ export async function saveActiveTabAs(): Promise<void> {
   }
 }
 
-/** Export the active tab via POST /api/export and download the ZIP. */
+/** Export the active tab as a single .3mf named "<card name>_<stamp>.3mf". */
 export async function exportActiveTab(): Promise<void> {
   const state = useDocumentStore.getState()
   const tab = getActiveTab(state)
   if (!tab) return
   try {
-    const blob = await exportDocument(tab.doc)
-    const base = suggestedFileName(tab.doc, tab.fileName).replace(/\.cardforge\.json$|\.json$/i, '')
-    downloadBlob(blob, `${base}.zip`)
+    const blob = await exportDocument(tab.doc, ['3mf'])
+    const name = (tab.doc.meta?.name ?? '').replace(/[\\/:*?"<>|]/g, '').trim() || 'card'
+    downloadBlob(blob, `${name}_${exportTimestamp()}.3mf`)
   } catch (e) {
     window.alert(`Export failed: ${e instanceof Error ? e.message : String(e)}`)
   }
+}
+
+/** Local-time compact stamp for export filenames: YYYYMMDD-HHMMSS. */
+function exportTimestamp(d = new Date()): string {
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}` +
+    `-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`
 }

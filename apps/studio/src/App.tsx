@@ -4,14 +4,14 @@ import React, { useEffect } from 'react'
 import { MenuBar } from './components/MenuBar'
 import { TabBar } from './components/TabBar'
 import { EditorLayout } from './components/EditorLayout'
-import { useDocumentStore, getActiveTab, removeFeatures } from './state/DocumentStore'
+import { useDocumentStore, getActiveTab, removeFeatures, restoreSession } from './state/DocumentStore'
 import { saveActiveTab } from './state/fileio'
 
 const App: React.FC = () => {
-  // Open a fresh document on first launch
+  // Restore the previous session from localStorage, else open a fresh doc
   useEffect(() => {
     const store = useDocumentStore.getState()
-    if (store.tabs.length === 0) store.newTab()
+    if (store.tabs.length === 0 && !restoreSession()) store.newTab()
   }, [])
 
   // Keyboard shortcuts:

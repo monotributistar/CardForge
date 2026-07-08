@@ -29,18 +29,22 @@ def compiled():
 def parse_3mf(data: bytes):
     with zipfile.ZipFile(BytesIO(data)) as zf:
         assert set(zf.namelist()) == {
-            "[Content_Types].xml", "_rels/.rels", "3D/3dmodel.model"}
+            "[Content_Types].xml", "_rels/.rels", "3D/3dmodel.model",
+            "Metadata/model_settings.config"}
         return ET.fromstring(zf.read("3D/3dmodel.model"))
 
 
 class Test3MF:
-    def test_one_object_per_material(self):
+    def test_one_mesh_object_per_part_plus_assembly(self):
         doc, scene = compiled()
         root = parse_3mf(scene_to_3mf(scene, doc.materials))
         objects = root.findall(f".//{NS}object")
-        assert len(objects) == 3  # base, text, accent all non-empty
-        names = [o.get("name") for o in objects]
+        mesh_objects = [o for o in objects if o.find(f"{NS}mesh") is not None]
+        assert len(mesh_objects) == 4  # base + features e, f, b
+        assert len(objects) == 5  # + the component assembly
+        names = [o.get("name") for o in mesh_objects]
         assert names[0].startswith("base")
+        assert [n.split()[0] for n in names[1:]] == ["e", "f", "b"]
 
     def test_basematerials_colors_match_palette(self):
         doc, scene = compiled()
@@ -49,21 +53,33 @@ class Test3MF:
         colors = {b.get("name"): b.get("displaycolor") for b in bases}
         assert colors == {"Base": "#1A1A1A", "Text": "#FFFFFF", "Accent": "#D4AF37"}
 
-    def test_objects_reference_material_index(self):
+    def test_parts_reference_their_material_index(self):
         doc, scene = compiled()
         root = parse_3mf(scene_to_3mf(scene, doc.materials))
-        for i, obj in enumerate(root.findall(f".//{NS}object")):
+        # basematerials order: base, text, accent (palette order)
+        expected = {"base": "0", "e": "1", "f": "2", "b": "1"}
+        mesh_objects = [o for o in root.findall(f".//{NS}object")
+                        if o.find(f"{NS}mesh") is not None]
+        for obj in mesh_objects:
+            part = obj.get("name").split()[0]
             assert obj.get("pid") == "1"
-            assert obj.get("pindex") == str(i)
+            assert obj.get("pindex") == expected[part]
 
     def test_mesh_counts_match_manifold(self):
         doc, scene = compiled()
         vols = normalized_volumes(scene)
         root = parse_3mf(scene_to_3mf(scene, doc.materials))
+        from cardforge.export.threemf import normalized_parts
+        by_part = {p.id: p.solid for p in normalized_parts(scene)}
         for obj in root.findall(f".//{NS}object"):
-            mid = obj.get("name").split()[0]
+            if obj.find(f"{NS}mesh") is None:
+                continue
+            pid = obj.get("name").split()[0]
             tris = obj.findall(f".//{NS}triangle")
-            assert len(tris) == vols[mid].num_tri()
+            assert len(tris) == by_part[pid].num_tri()
+        # sanity: parts of one material triangulate its full volume
+        assert sum(by_part[p].num_tri() for p in ("e", "b")) \
+            == sum(v.num_tri() for m, v in vols.items() if m == "text")
 
     def test_bed_normalization_rests_on_bed(self):
         doc, scene = compiled()
@@ -88,12 +104,44 @@ class Test3MF:
             bad = [e for e, n in edges.items() if n != 2]
             assert not bad, f"object {obj.get('name')}: {len(bad)} non-manifold edges"
 
-    def test_build_items_reference_objects(self):
+    def test_single_build_item_references_assembly(self):
+        """One build item → slicers import one grouped object, not N loose ones."""
         doc, scene = compiled()
         root = parse_3mf(scene_to_3mf(scene, doc.materials))
-        obj_ids = {o.get("id") for o in root.findall(f".//{NS}object")}
-        item_refs = {i.get("objectid") for i in root.findall(f".//{NS}item")}
-        assert item_refs == obj_ids
+        items = root.findall(f".//{NS}item")
+        assert len(items) == 1
+        assembly = next(o for o in root.findall(f".//{NS}object")
+                        if o.find(f"{NS}components") is not None)
+        assert items[0].get("objectid") == assembly.get("id")
+        mesh_ids = {o.get("id") for o in root.findall(f".//{NS}object")
+                    if o.find(f"{NS}mesh") is not None}
+        comp_refs = {c.get("objectid")
+                     for c in assembly.findall(f"{NS}components/{NS}component")}
+        assert comp_refs == mesh_ids
+
+    def test_model_settings_maps_parts_to_slots(self):
+        """Bambu/Orca read Metadata/model_settings.config to auto-assign a
+        filament (extruder = material slot) to every part."""
+        doc, scene = compiled()
+        data = scene_to_3mf(scene, doc.materials)
+        with zipfile.ZipFile(BytesIO(data)) as zf:
+            cfg = ET.fromstring(zf.read("Metadata/model_settings.config"))
+        model = parse_3mf(data)
+        assembly = next(o for o in model.findall(f".//{NS}object")
+                        if o.find(f"{NS}components") is not None)
+        obj_cfg = cfg.find("object")
+        assert obj_cfg.get("id") == assembly.get("id")
+        extruders = {}
+        for part in obj_cfg.findall("part"):
+            meta = {m.get("key"): m.get("value") for m in part.findall("metadata")}
+            extruders[meta["name"].split()[0]] = meta["extruder"]
+        # slots: base=1, text=2, accent=3 (from the palette)
+        assert extruders == {"base": "1", "e": "2", "f": "3", "b": "2"}
+        # every mesh object is covered
+        part_ids = {p.get("id") for p in obj_cfg.findall("part")}
+        mesh_ids = {o.get("id") for o in model.findall(f".//{NS}object")
+                    if o.find(f"{NS}mesh") is not None}
+        assert part_ids == mesh_ids
 
 
 class TestSTL:

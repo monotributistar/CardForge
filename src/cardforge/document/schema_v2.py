@@ -13,7 +13,7 @@ Structure:
     assets:    asset id → file path (SVG icons, fonts)
     faces:     front / back, each a list of features
 
-Feature types: text-block, text-pattern, pattern, qr, icon, shape.
+Feature types: text-block, text-pattern, pattern, qr, icon, shape, hole.
 Relief modes:  emboss, deboss, flush, cut, deboss-backed — any feature can use
                any relief mode (a QR can be a through-cut, text can be a
                backed cavity, etc.).
@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 SCHEMA_VERSION = "2.0"
-FEATURE_TYPES = ("text-block", "text-pattern", "pattern", "qr", "icon", "shape")
+FEATURE_TYPES = ("text-block", "text-pattern", "pattern", "qr", "icon", "shape", "hole")
 RELIEF_MODES = ("emboss", "deboss", "flush", "cut", "deboss-backed")
 
 _SCHEMA_PATH = Path(__file__).parent / "schema" / "v2.schema.json"
@@ -139,13 +139,21 @@ class Backing:
                     (e.g. over a lattice base); no-op on a solid base.
           'on'    — always add a pad.
           'off'   — never add a pad.
-    thickness: pad thickness in mm (0 = full object thickness, a solid column).
+    thickness: pad thickness in mm. 0 = auto: full object thickness over a
+               lattice (the pad must reach the bed), a thin surface plate on
+               a solid base (a through-column would show on the other face).
     material: pad material id (defaults to the base material).
+    padding: extra margin (mm) around the feature bounds for the plate
+             (QR features default to their quiet zone).
+    shape: plate outline — 'rect' (bounds + padding) or 'circle' (centered
+           on the bounds, diameter = larger bounds side + 2*padding).
     """
 
     mode: str = "auto"
     thickness: float = 0.0
     material: str = ""
+    padding: float = 0.0
+    shape: str = "rect"
 
 
 @dataclass
@@ -177,6 +185,7 @@ class Feature:
     line_height: float = 1.4                                 # text-block
     text: str = ""                                           # text-pattern
     spacing: float = 0.0                                     # text-pattern, pattern
+    spacing_y: float = 0.0                                   # text-pattern (0 → same as spacing)
     angle: float = 0.0                                       # text-pattern, pattern
     pattern_type: str = ""                                   # pattern
     element_size: float = 0.0                                # pattern
@@ -198,6 +207,9 @@ class Feature:
     inset: float = 0.0                                       # shape frame/corner-marks
     length: float = 0.0                                      # shape corner-marks
     svg_path: str = ""                                       # shape path
+    hole_type: str = ""                                      # hole: circle | slot
+    tab: bool = False                                        # hole: add a material lug
+    tab_margin: float = 0.0                                  # hole: lug ring width (0 → 3mm)
 
 
 @dataclass
@@ -239,6 +251,7 @@ class DocumentV2:
     # ── Serialization ──────────────────────────────────────────────────
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "DocumentV2":
+        _sanitize_relief(data)
         validate_v2(data)  # raises DocumentValidationError
 
         meta = Meta(
@@ -340,6 +353,32 @@ def _load_schema() -> Dict[str, Any]:
     return json.loads(_SCHEMA_PATH.read_text())
 
 
+# Params each relief mode accepts. Mode switches in older Studio builds left
+# the previous mode's params behind (e.g. emboss's `height` after switching
+# to deboss), which the strict schema then rejected — documents saved that
+# way must still open, so loading prunes params foreign to the active mode.
+_RELIEF_PARAMS = {
+    "emboss": {"height"},
+    "deboss": {"depth"},
+    "flush": {"depth"},
+    "cut": set(),
+    "deboss-backed": {"depth", "floorMaterial", "floorThickness"},
+}
+
+
+def _sanitize_relief(data: Dict[str, Any]) -> None:
+    for face in (data.get("faces") or {}).values():
+        for feat in face.get("features", []) if isinstance(face, dict) else []:
+            relief = feat.get("relief")
+            if not isinstance(relief, dict):
+                continue
+            allowed = _RELIEF_PARAMS.get(relief.get("mode"))
+            if allowed is None:
+                continue  # unknown mode — let validation report it
+            for key in [k for k in relief if k != "mode" and k not in allowed]:
+                del relief[key]
+
+
 def validate_v2(data: Dict[str, Any]) -> None:
     """Validate a raw dict against the v2 JSON Schema + referential rules.
 
@@ -427,6 +466,10 @@ def _backing_to_dict(b: "Backing") -> Dict[str, Any]:
         d["thickness"] = b.thickness
     if b.material:
         d["material"] = b.material
+    if b.padding:
+        d["padding"] = b.padding
+    if b.shape and b.shape != "rect":
+        d["shape"] = b.shape
     return d
 
 
@@ -465,6 +508,8 @@ def _feature_from_dict(f: Dict[str, Any]) -> Feature:
             mode=f["backing"].get("mode", "auto"),
             thickness=f["backing"].get("thickness", 0.0),
             material=f["backing"].get("material", ""),
+            padding=f["backing"].get("padding", 0.0),
+            shape=f["backing"].get("shape", "rect"),
         ) if f.get("backing") else None,
         lines=list(f.get("lines", [])),
         font=font,
@@ -472,6 +517,7 @@ def _feature_from_dict(f: Dict[str, Any]) -> Feature:
         line_height=f.get("lineHeight", 1.4),
         text=f.get("text", ""),
         spacing=f.get("spacing", 0.0),
+        spacing_y=f.get("spacingY", 0.0),
         angle=f.get("angle", 0.0),
         pattern_type=f.get("patternType", ""),
         element_size=f.get("elementSize", 0.0),
@@ -493,6 +539,9 @@ def _feature_from_dict(f: Dict[str, Any]) -> Feature:
         inset=f.get("inset", 0.0),
         length=f.get("length", 0.0),
         svg_path=f.get("svgPath", ""),
+        hole_type=f.get("holeType", ""),
+        tab=f.get("tab", False),
+        tab_margin=f.get("tabMargin", 0.0),
     )
 
 
@@ -528,11 +577,15 @@ def _feature_to_dict(f: Feature) -> Dict[str, Any]:
         d["text"] = f.text
         d["font"] = _font_to_dict(f.font)
         d["spacing"] = f.spacing
+        if f.spacing_y:
+            d["spacingY"] = f.spacing_y
         if f.angle:
             d["angle"] = f.angle
     elif f.type == "pattern":
         d["patternType"] = f.pattern_type
         d["spacing"] = f.spacing
+        if f.spacing_y:
+            d["spacingY"] = f.spacing_y
         if f.angle:
             d["angle"] = f.angle
         if f.element_size:
@@ -543,6 +596,10 @@ def _feature_to_dict(f: Feature) -> Dict[str, Any]:
             d["width"] = f.width
         if f.height:
             d["height"] = f.height
+        if f.svg_inline:
+            d["svgInline"] = f.svg_inline
+        if f.color_map:
+            d["colorMap"] = dict(f.color_map)
     elif f.type == "qr":
         d["qrType"] = f.qr_type
         d["fields"] = dict(f.fields)
@@ -572,6 +629,16 @@ def _feature_to_dict(f: Feature) -> Dict[str, Any]:
                 d[key] = val
         if f.svg_path:
             d["svgPath"] = f.svg_path
+    elif f.type == "hole":
+        d["holeType"] = f.hole_type
+        for key, val in (
+            ("diameter", f.diameter), ("width", f.width), ("height", f.height),
+            ("tabMargin", f.tab_margin),
+        ):
+            if val:
+                d[key] = val
+        if f.tab:
+            d["tab"] = True
     return d
 
 

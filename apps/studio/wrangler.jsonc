@@ -1,0 +1,14 @@
+// Cloudflare Workers deployment — CardForge Studio (static SPA).
+// Build first: VITE_CORE_URL=https://cardforge-core.minarai.xyz pnpm build
+// Deploy:      npx wrangler deploy
+{
+  "name": "cardforge-studio",
+  "compatibility_date": "2026-07-01",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  },
+  "routes": [
+    { "pattern": "cardforge.minarai.xyz", "custom_domain": true }
+  ]
+}

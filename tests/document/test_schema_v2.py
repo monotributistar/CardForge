@@ -106,6 +106,38 @@ class TestValidation:
         doc["faces"]["front"]["features"] = [text_feature(relief={"mode": "cut"})]
         validate_v2(doc)
 
+    def test_stale_relief_params_forgiven_on_load(self):
+        """Older Studio builds left the previous mode's params behind when
+        switching relief mode (emboss→deboss kept `height`); such documents
+        must still load, with the foreign params pruned."""
+        doc = minimal_doc()
+        doc["faces"]["front"]["features"] = [text_feature(
+            relief={"mode": "deboss", "height": 0.4, "depth": 0.5})]
+        loaded = DocumentV2.from_dict(doc)
+        relief = loaded.faces["front"].features[0].relief
+        assert relief.mode == "deboss"
+        assert relief.depth == 0.5
+        # strict validation still rejects it when not going through from_dict
+        doc2 = minimal_doc()
+        doc2["faces"]["front"]["features"] = [text_feature(
+            relief={"mode": "deboss", "height": 0.4, "depth": 0.5})]
+        with pytest.raises(DocumentValidationError):
+            validate_v2(doc2)
+
+    def test_text_pattern_spacing_y_round_trip(self):
+        doc = minimal_doc()
+        doc["faces"]["front"]["features"] = [{
+            "id": "tp", "type": "text-pattern", "text": "HI",
+            "transform": {"x": 0, "y": 0}, "material": "text",
+            "relief": {"mode": "deboss", "depth": 0.3},
+            "font": {"family": "Montserrat", "size": 4},
+            "spacing": 6, "spacingY": 9,
+        }]
+        loaded = DocumentV2.from_dict(doc)
+        feat = loaded.faces["front"].features[0]
+        assert feat.spacing == 6 and feat.spacing_y == 9
+        assert loaded.to_dict()["faces"]["front"]["features"][0]["spacingY"] == 9
+
     def test_icon_color_map_references_materials(self):
         doc = minimal_doc()
         doc["faces"]["front"]["features"] = [{
@@ -181,3 +213,49 @@ class TestRoundTrip:
         assert model.to_dict()["faces"]["front"]["features"][0]["relief"] == {
             "mode": "deboss-backed", "depth": 0.6,
             "floorMaterial": "accent", "floorThickness": 0.2}
+
+
+class TestHoleFeature:
+    def hole(self, **overrides):
+        feat = {
+            "id": "h1", "type": "hole", "holeType": "circle", "diameter": 5,
+            "transform": {"x": 10, "y": 10}, "material": "base",
+            "relief": {"mode": "cut"},
+        }
+        feat.update(overrides)
+        return feat
+
+    def test_circle_hole_valid(self):
+        doc = minimal_doc()
+        doc["faces"]["front"]["features"] = [self.hole()]
+        DocumentV2.from_dict(doc)  # must not raise
+
+    def test_slot_hole_round_trip(self):
+        doc = minimal_doc()
+        doc["faces"]["front"]["features"] = [self.hole(
+            holeType="slot", width=14, height=5, tab=True, tabMargin=4.0)]
+        del doc["faces"]["front"]["features"][0]["diameter"]
+        loaded = DocumentV2.from_dict(doc)
+        f = loaded.faces["front"].features[0]
+        assert (f.hole_type, f.width, f.height, f.tab, f.tab_margin) == \
+            ("slot", 14, 5, True, 4.0)
+        out = loaded.to_dict()["faces"]["front"]["features"][0]
+        assert out["holeType"] == "slot"
+        assert out["tab"] is True
+        assert out["tabMargin"] == 4.0
+        DocumentV2.from_dict(loaded.to_dict())  # round-trip revalidates
+
+    def test_hole_requires_hole_type(self):
+        doc = minimal_doc()
+        feat = self.hole()
+        del feat["holeType"]
+        doc["faces"]["front"]["features"] = [feat]
+        with pytest.raises(DocumentValidationError):
+            DocumentV2.from_dict(doc)
+
+    def test_tab_defaults_off(self):
+        doc = minimal_doc()
+        doc["faces"]["front"]["features"] = [self.hole()]
+        f = DocumentV2.from_dict(doc).faces["front"].features[0]
+        assert f.tab is False
+        assert "tab" not in DocumentV2.from_dict(doc).to_dict()["faces"]["front"]["features"][0]

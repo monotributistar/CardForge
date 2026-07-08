@@ -140,5 +140,13 @@ export function defaultFeature(type: Feature['type'], face: FaceId, materialId =
         width: 20,
         height: 10,
       }
+    case 'hole':
+      // A hole is always a through-cut; relief mode is fixed.
+      return {
+        ...base, type,
+        relief: { mode: 'cut' },
+        holeType: 'circle',
+        diameter: 5,
+      }
   }
 }

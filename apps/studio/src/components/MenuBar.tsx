@@ -1,7 +1,10 @@
 // MenuBar — file operations, undo/redo, document name + dirty indicator.
 
-import React from 'react'
-import { useDocumentStore, getActiveTab } from '../state/DocumentStore'
+import React, { useState, useRef, useEffect } from 'react'
+import {
+  useDocumentStore, getActiveTab,
+  listStoredDocuments, loadStoredDocument, deleteStoredDocument, type StoredDocInfo,
+} from '../state/DocumentStore'
 import { openDocumentViaDialog, saveActiveTab, saveActiveTabAs, exportActiveTab } from '../state/fileio'
 
 export const MenuBar: React.FC = () => {
@@ -23,6 +26,7 @@ export const MenuBar: React.FC = () => {
 
       <MenuBtn onClick={() => newTab()}>New</MenuBtn>
       <MenuBtn onClick={() => void openDocumentViaDialog()}>Open</MenuBtn>
+      <RecentMenu />
       <MenuBtn disabled={!hasDoc} onClick={() => void saveActiveTab()}>Save</MenuBtn>
       <MenuBtn disabled={!hasDoc} onClick={() => void saveActiveTabAs()}>Save As</MenuBtn>
       <MenuBtn disabled={!hasDoc} onClick={() => void exportActiveTab()} accent>Export</MenuBtn>
@@ -40,6 +44,64 @@ export const MenuBar: React.FC = () => {
           {tab.fileName && <span style={{ color: '#484f58' }}>({tab.fileName})</span>}
           {tab.dirty && <span title="Unsaved changes" style={{ color: '#d29922', fontSize: 14, lineHeight: 1 }}>●</span>}
         </span>
+      )}
+    </div>
+  )
+}
+
+// Documents autosaved to localStorage — open or delete them.
+const RecentMenu: React.FC = () => {
+  const [open, setOpen] = useState(false)
+  const [docs, setDocs] = useState<StoredDocInfo[]>([])
+  const ref = useRef<HTMLDivElement>(null)
+  const openTab = useDocumentStore(s => s.newTab)
+  const setActive = useDocumentStore(s => s.setActive)
+
+  useEffect(() => {
+    if (!open) return
+    setDocs(listStoredDocuments())
+    const onDocClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDocClick)
+    return () => document.removeEventListener('mousedown', onDocClick)
+  }, [open])
+
+  const openStored = (id: string) => {
+    setOpen(false)
+    const state = useDocumentStore.getState()
+    const existing = state.tabs.find(t => t.doc.meta.id === id)
+    if (existing) { setActive(existing.id); return }
+    const doc = loadStoredDocument(id)
+    if (doc) openTab(doc)
+  }
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <MenuBtn onClick={() => setOpen(o => !o)}>Recent ▾</MenuBtn>
+      {open && (
+        <div style={{
+          position: 'absolute', top: 26, left: 0, zIndex: 50, minWidth: 240,
+          background: '#161b22', border: '1px solid #30363d', borderRadius: 6,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.5)', padding: 4,
+        }}>
+          {docs.length === 0 && (
+            <div style={{ padding: '6px 8px', fontSize: 11, color: '#484f58' }}>No stored documents</div>
+          )}
+          {docs.map(d => (
+            <div key={d.id}
+              onClick={() => openStored(d.id)}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', cursor: 'pointer', borderRadius: 4, color: '#c9d1d9', fontSize: 12 }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#21262d' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}>
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name}</span>
+              <span style={{ fontSize: 10, color: '#484f58' }}>{d.savedAt.slice(0, 16).replace('T', ' ')}</span>
+              <button title="Delete from browser storage"
+                onClick={e => { e.stopPropagation(); deleteStoredDocument(d.id); setDocs(listStoredDocuments()) }}
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 11, padding: 0 }}>🗑</button>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   )

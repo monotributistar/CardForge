@@ -39,3 +39,21 @@ class TestMinFeatureWidth:
     def test_scale_changes_width(self):
         r = rect(20, 0.3)
         assert min_feature_width(r.scale((2, 2))) > min_feature_width(r) * 1.5
+
+    def test_normal_text_at_readable_size_is_not_thin(self):
+        """Regression: corner shedding on long text used to drag the
+        estimate under the nozzle even when every stroke was thick.
+        A size-10 sans block must measure well above a 0.4mm nozzle."""
+        w = min_feature_width(
+            text_block(["Monotributistar"], "DejaVu Sans", 10.0).cross_section)
+        assert w > 0.55
+
+    def test_corner_count_does_not_change_the_estimate(self):
+        """Same stroke width, 10× the corners → same measurement."""
+        one = min_feature_width(frame(20, 12, 0.5))
+        many = min_feature_width(
+            text_block(["mmmmmmmmmm"], "DejaVu Sans", 8.0).cross_section)
+        # the text's true thinnest stroke at size 8 is ~0.6; the point is
+        # that it stays in the same band as a lone 0.5mm frame instead of
+        # collapsing toward zero with glyph count.
+        assert many > one * 0.8

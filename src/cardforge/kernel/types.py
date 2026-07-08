@@ -92,14 +92,34 @@ class CompileTrace:
 
 
 @dataclass
+class ScenePart:
+    """One printable part: the base body or a single feature's solid."""
+
+    id: str        # "base" or the feature id (suffixes: "-floor", "-pad", ":<mat>")
+    material: str  # material id
+    solid: Manifold
+    name: str = ""  # display name (feature.name when set); falls back to id
+
+
+@dataclass
 class CompiledScene:
-    """The kernel's output: a disjoint partition of the object volume."""
+    """The kernel's output: a disjoint partition of the object volume.
+
+    `parts` is the fine partition (base + one part per feature) used by the
+    3MF export so slicers show meaningful pieces; `volumes` groups the same
+    geometry per material for STL export and analysis.
+    """
 
     volumes: Dict[str, Manifold]  # material id → solid (may be empty Manifold)
     thickness: float
     outline_bounds: Bounds        # document space bounds of the outline
     material_order: List[str]     # palette order, for deterministic export
+    parts: List[ScenePart] = field(default_factory=list)
 
     def non_empty(self) -> Dict[str, Manifold]:
         return {k: v for k, v in self.volumes.items()
                 if not v.is_empty() and v.volume() > 1e-9}
+
+    def non_empty_parts(self) -> List[ScenePart]:
+        return [p for p in self.parts
+                if not p.solid.is_empty() and p.solid.volume() > 1e-9]

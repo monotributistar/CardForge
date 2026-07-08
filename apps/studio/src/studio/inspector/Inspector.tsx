@@ -5,10 +5,12 @@
 import React from 'react'
 import type {
   DocumentV2, Feature, Material, ReliefMode, Outline, Fill,
-  TextBlockFeature, TextPatternFeature, PatternFeature, QRFeature, IconFeature, ShapeFeature,
+  TextBlockFeature, TextPatternFeature, PatternFeature, QRFeature, IconFeature, ShapeFeature, HoleFeature,
 } from '../../types/cardforge'
 import { useDocumentStore, getActiveTab, findFeature, removeFeatures } from '../../state/DocumentStore'
 import { FIELD_DEFS, QR_TYPE_LABELS, type QRType } from '../services/QRFields'
+import { applySvgToFeature, extractSvgPathD } from '../services/SvgImport'
+import { ICON_LIBRARY, ICON_CATEGORY_LABELS, libraryIconSvg, type IconCategory, type LibraryIcon } from '../services/IconLibrary'
 import { listFonts, type FontInfo } from '../core/CoreClient'
 
 // Font families the Core can render — fetched once, cached in CoreClient.
@@ -114,10 +116,15 @@ const FeatureInspector: React.FC<{ doc: DocumentV2; feature: Feature; selectedId
         </Row>
       </Section>
 
-      <ReliefEditor feature={feature} materials={doc.materials} edit={edit}
-        isBack={doc.faces.back?.features.some(f => f.id === feature.id) ?? false} />
+      {/* A hole is always a through-cut: relief and backing don't apply. */}
+      {feature.type !== 'hole' && (
+        <>
+          <ReliefEditor feature={feature} materials={doc.materials} edit={edit}
+            isBack={doc.faces.back?.features.some(f => f.id === feature.id) ?? false} />
 
-      <BackingEditor feature={feature} materials={doc.materials} edit={edit} />
+          <BackingEditor feature={feature} materials={doc.materials} edit={edit} />
+        </>
+      )}
 
       {feature.type === 'text-block' && <TextBlockEditor feature={feature} edit={edit} />}
       {feature.type === 'text-pattern' && <TextPatternEditor feature={feature} edit={edit} />}
@@ -125,6 +132,7 @@ const FeatureInspector: React.FC<{ doc: DocumentV2; feature: Feature; selectedId
       {feature.type === 'qr' && <QREditor feature={feature} edit={edit} />}
       {feature.type === 'icon' && <IconEditor feature={feature} materials={doc.materials} edit={edit} />}
       {feature.type === 'shape' && <ShapeEditor feature={feature} edit={edit} />}
+      {feature.type === 'hole' && <HoleEditor feature={feature} edit={edit} />}
     </div>
   )
 }
@@ -145,10 +153,26 @@ const ReliefEditor: React.FC<{ feature: Feature; materials: Material[]; edit: Ed
       <Row label="Mode">
         <Select value={relief.mode} options={modes.map(m => [m, m])}
           onCommit={v => edit(f => {
-            f.relief.mode = v as ReliefMode
-            if (v === 'emboss' && f.relief.height == null) f.relief.height = 0.4
-            if ((v === 'deboss' || v === 'deboss-backed') && f.relief.depth == null) f.relief.depth = 0.4
-            if (v === 'flush' && f.relief.depth == null) f.relief.depth = 0.4
+            // Rebuild the relief with only the new mode's params — stale
+            // leftovers (e.g. emboss height on a deboss) fail validation.
+            const prev = f.relief
+            const mode = v as ReliefMode
+            if (mode === 'emboss') {
+              f.relief = { mode, height: prev.height ?? 0.4 }
+            } else if (mode === 'cut') {
+              f.relief = { mode }
+            } else if (mode === 'deboss-backed') {
+              const floor = (prev.floorMaterial && prev.floorMaterial !== f.material)
+                ? prev.floorMaterial
+                : materials.find(m => m.id !== f.material)?.id
+              f.relief = {
+                mode, depth: prev.depth ?? 0.4,
+                ...(floor ? { floorMaterial: floor } : {}),
+                floorThickness: prev.floorThickness ?? 0.4,
+              }
+            } else { // deboss | flush
+              f.relief = { mode, depth: prev.depth ?? 0.4 }
+            }
           })} />
       </Row>
       {isBack && relief.mode === 'emboss' && (
@@ -162,11 +186,32 @@ const ReliefEditor: React.FC<{ feature: Feature; materials: Material[]; edit: Ed
       {(relief.mode === 'deboss' || relief.mode === 'deboss-backed') && (
         <Row label="Depth (mm)"><NumInput value={relief.depth ?? 0.4} step={0.1} onCommit={v => edit(f => { f.relief.depth = v })} /></Row>
       )}
+      {relief.mode === 'deboss' && (
+        <Row label="Background">
+          <MaterialSelect materials={materials.filter(m => m.id !== feature.material)}
+            value={''} allowEmpty emptyLabel="None (empty cavity)"
+            onCommit={v => edit(f => {
+              // A background color turns the cavity into deboss-backed:
+              // same depth, floor of the chosen material.
+              if (!v) return
+              const depth = f.relief.depth ?? 0.4
+              f.relief = {
+                mode: 'deboss-backed', depth,
+                floorMaterial: v,
+                floorThickness: Math.min(0.2, depth / 2),
+              }
+            })} />
+        </Row>
+      )}
       {relief.mode === 'deboss-backed' && (
         <>
           <Row label="Floor material">
-            <MaterialSelect materials={materials} value={relief.floorMaterial ?? ''} allowEmpty
-              onCommit={v => edit(f => { if (v) f.relief.floorMaterial = v; else delete f.relief.floorMaterial })} />
+            <MaterialSelect materials={materials.filter(m => m.id !== feature.material)}
+              value={relief.floorMaterial ?? ''} allowEmpty emptyLabel="None → plain deboss"
+              onCommit={v => edit(f => {
+                if (v) { f.relief.floorMaterial = v; return }
+                f.relief = { mode: 'deboss', depth: f.relief.depth ?? 0.4 }
+              })} />
           </Row>
           <Row label="Floor thickness"><NumInput value={relief.floorThickness ?? 0.4} step={0.1} onCommit={v => edit(f => { f.relief.floorThickness = v })} /></Row>
         </>
@@ -188,26 +233,41 @@ const BackingEditor: React.FC<{ feature: Feature; materials: Material[]; edit: E
             else f.backing = { ...(f.backing ?? {}), mode: v as 'on' | 'off' }
           })} />
       </Row>
-      {mode === 'on' && (
+      {mode !== 'off' && (
         <>
-          <Row label="Thickness">
-            <NumInput value={feature.backing?.thickness ?? 0} step={0.1} placeholder="0 = full"
+          <Row label="Shape">
+            <Select value={feature.backing?.shape ?? 'rect'} options={[['rect', 'Rectangle'], ['circle', 'Circle']]}
               onCommit={v => edit(f => {
-                if (!f.backing) f.backing = { mode: 'on' }
+                if (!f.backing) f.backing = { mode }
+                if (v === 'circle') f.backing.shape = 'circle'; else delete f.backing.shape
+              })} />
+          </Row>
+          <Row label="Thickness">
+            <NumInput value={feature.backing?.thickness ?? 0} step={0.1} placeholder="0 = auto"
+              onCommit={v => edit(f => {
+                if (!f.backing) f.backing = { mode }
                 if (v > 0) f.backing.thickness = v; else delete f.backing.thickness
               })} />
           </Row>
           <Row label="Material">
             <MaterialSelect materials={materials} value={feature.backing?.material ?? ''} allowEmpty emptyLabel="Base (default)"
               onCommit={v => edit(f => {
-                if (!f.backing) f.backing = { mode: 'on' }
+                if (!f.backing) f.backing = { mode }
                 if (v) f.backing.material = v; else delete f.backing.material
+              })} />
+          </Row>
+          <Row label="Padding (mm)">
+            <NumInput value={feature.backing?.padding ?? 0} step={0.5} placeholder="QR: quiet zone · resto: 1.5"
+              onCommit={v => edit(f => {
+                if (!f.backing) f.backing = { mode }
+                if (v > 0) f.backing.padding = v; else delete f.backing.padding
               })} />
           </Row>
         </>
       )}
       <div style={{ fontSize: 11, color: '#484f58', padding: '2px 0' }}>
         Adds a solid pad so the feature isn't left floating over a lattice base.
+        Thickness auto: full column over lattice · 0.6 mm plate on a solid base.
       </div>
     </Section>
   )
@@ -261,7 +321,12 @@ const FontEditor: React.FC<{ feature: TextBlockFeature | TextPatternFeature; edi
     )}
     {weight && !isVariable && current && known && (
       <div style={{ fontSize: 10, color: '#8b949e', padding: '0 0 2px' }}>
-        Weight/axes apply only to variable fonts (marked · var)
+        {(() => {
+          const w = fonts.find(f => f.family === current)?.weights ?? []
+          return w.length > 1
+            ? `Pesos disponibles: ${w.join(', ')} (se usa el más cercano)`
+            : 'Esta familia tiene un solo peso instalado'
+        })()}
       </div>
     )}
     <Row label="Italic">
@@ -288,23 +353,66 @@ const TextPatternEditor: React.FC<{ feature: TextPatternFeature; edit: EditFn }>
   <>
     <Section title="Text pattern">
       <Row label="Text"><TextInput value={feature.text} onCommit={v => edit<TextPatternFeature>(f => { f.text = v })} /></Row>
-      <Row label="Spacing (mm)"><NumInput value={feature.spacing} step={0.5} onCommit={v => edit<TextPatternFeature>(f => { f.spacing = v })} /></Row>
+      <Row label="Gap X (mm)"><NumInput value={feature.spacing} step={0.5} min={0.1} onCommit={v => edit<TextPatternFeature>(f => { f.spacing = v })} /></Row>
+      <Row label="Gap Y (mm)">
+        <NumInput value={feature.spacingY ?? feature.spacing} step={0.5} min={0.1}
+          onCommit={v => edit<TextPatternFeature>(f => {
+            if (v === f.spacing) delete f.spacingY
+            else f.spacingY = v
+          })} />
+      </Row>
       <Row label="Angle"><NumInput value={feature.angle ?? 0} step={1} onCommit={v => edit<TextPatternFeature>(f => { f.angle = v })} /></Row>
+      <div style={{ fontSize: 10, color: '#484f58', padding: '2px 0' }}>
+        Gap = separación entre repeticiones — se mantiene al cambiar el texto.
+      </div>
     </Section>
-    <FontEditor feature={feature} edit={edit} />
+    <FontEditor feature={feature} edit={edit} weight />
   </>
 )
 
 // ── pattern ──────────────────────────────────────────────────────────
 
-const PatternEditor: React.FC<{ feature: PatternFeature; edit: EditFn }> = ({ feature, edit }) => (
+const PatternEditor: React.FC<{ feature: PatternFeature; edit: EditFn }> = ({ feature, edit }) => {
+  const handleSvgUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    void file.text().then(text => {
+      useDocumentStore.getState().applyEdit(d => {
+        applySvgToFeature(d, feature.id, text)
+      })
+    })
+    e.target.value = ''
+  }
+  return (
   <Section title="Pattern">
     <Row label="Type">
-      <Select value={feature.patternType} options={[['dots', 'Dots'], ['lines', 'Lines'], ['grid', 'Grid'], ['hex', 'Hex']]}
+      <Select value={feature.patternType} options={[['dots', 'Dots'], ['lines', 'Lines'], ['grid', 'Grid'], ['hex', 'Hex'], ['svg', 'SVG motif']]}
         onCommit={v => edit<PatternFeature>(f => { f.patternType = v as PatternFeature['patternType'] })} />
     </Row>
-    <Row label="Spacing (mm)"><NumInput value={feature.spacing} step={0.5} onCommit={v => edit<PatternFeature>(f => { f.spacing = v })} /></Row>
-    <Row label="Element size"><NumInput value={feature.elementSize ?? 1} step={0.1} onCommit={v => edit<PatternFeature>(f => { f.elementSize = v })} /></Row>
+    {feature.patternType === 'svg' && (
+      <>
+        <Row label="Library" vertical>
+          <IconPicker featureId={feature.id} />
+        </Row>
+        <Row label="Upload .svg">
+          <input type="file" accept=".svg,image/svg+xml" onChange={handleSvgUpload} style={{ fontSize: 11, color: '#8b949e', maxWidth: 160 }} />
+        </Row>
+        {feature.svgInline && (
+          <Row label="Motif"><ReadOnly value={`${Object.keys(feature.colorMap ?? {}).length || 1} color(s), ${feature.svgInline.length} chars`} /></Row>
+        )}
+      </>
+    )}
+    <Row label={feature.patternType === 'svg' ? 'Gap X (mm)' : 'Spacing (mm)'}><NumInput value={feature.spacing} step={0.5} min={0.1} onCommit={v => edit<PatternFeature>(f => { f.spacing = v })} /></Row>
+    {feature.patternType === 'svg' && (
+      <Row label="Gap Y (mm)">
+        <NumInput value={feature.spacingY ?? feature.spacing} step={0.5} min={0.1}
+          onCommit={v => edit<PatternFeature>(f => {
+            if (v === f.spacing) delete f.spacingY
+            else f.spacingY = v
+          })} />
+      </Row>
+    )}
+    <Row label={feature.patternType === 'svg' ? 'Motif size (mm)' : 'Element size'}><NumInput value={feature.elementSize ?? 1} step={0.1} min={0.1} onCommit={v => edit<PatternFeature>(f => { f.elementSize = v })} /></Row>
     <Row label="Angle"><NumInput value={feature.angle ?? 0} step={1} onCommit={v => edit<PatternFeature>(f => { f.angle = v })} /></Row>
     <Row label="Region">
       <Select value={feature.region ?? 'bounds'} options={[['face', 'Whole face'], ['bounds', 'Bounds']]}
@@ -317,7 +425,8 @@ const PatternEditor: React.FC<{ feature: PatternFeature; edit: EditFn }> = ({ fe
       </>
     )}
   </Section>
-)
+  )
+}
 
 // ── qr ───────────────────────────────────────────────────────────────
 
@@ -355,6 +464,43 @@ const QREditor: React.FC<{ feature: QRFeature; edit: EditFn }> = ({ feature, edi
   )
 }
 
+// ── icon library picker ──────────────────────────────────────────────
+
+// Grid of built-in glyphs (social + general). Clicking one stores it as
+// the feature's inline SVG through the same path as an uploaded file.
+const IconPicker: React.FC<{ featureId: string }> = ({ featureId }) => {
+  const apply = (icon: LibraryIcon) => {
+    useDocumentStore.getState().applyEdit(d => {
+      applySvgToFeature(d, featureId, libraryIconSvg(icon))
+    })
+  }
+  return (
+    <div>
+      {(Object.keys(ICON_CATEGORY_LABELS) as IconCategory[]).map(cat => (
+        <div key={cat} style={{ marginBottom: 4 }}>
+          <div style={{ fontSize: 10, color: '#484f58', padding: '2px 0' }}>{ICON_CATEGORY_LABELS[cat]}</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            {ICON_LIBRARY.filter(i => i.category === cat).map(icon => (
+              <button key={icon.id} title={icon.name} onClick={() => apply(icon)}
+                style={{
+                  width: 26, height: 26, padding: 4, cursor: 'pointer',
+                  background: '#161b22', border: '1px solid #30363d', borderRadius: 4,
+                  color: '#8b949e', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.color = '#c9d1d9'; e.currentTarget.style.borderColor = '#8b949e' }}
+                onMouseLeave={e => { e.currentTarget.style.color = '#8b949e'; e.currentTarget.style.borderColor = '#30363d' }}>
+                <svg viewBox={`0 0 ${icon.vb ?? 24} ${icon.vb ?? 24}`} width="16" height="16">
+                  <path d={icon.d} fill="currentColor" />
+                </svg>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ── icon ─────────────────────────────────────────────────────────────
 
 const IconEditor: React.FC<{ feature: IconFeature; materials: Material[]; edit: EditFn }> = ({ feature, materials, edit }) => {
@@ -362,9 +508,10 @@ const IconEditor: React.FC<{ feature: IconFeature; materials: Material[]; edit: 
     const file = e.target.files?.[0]
     if (!file) return
     void file.text().then(text => {
-      edit<IconFeature>(f => {
-        f.svgInline = text
-        delete f.svgAsset
+      // Doc-level edit: stores the SVG inline AND creates one material per
+      // fill color (colorMap), so multicolor art prints multi-material.
+      useDocumentStore.getState().applyEdit(d => {
+        applySvgToFeature(d, feature.id, text)
       })
     })
     e.target.value = ''
@@ -374,6 +521,9 @@ const IconEditor: React.FC<{ feature: IconFeature; materials: Material[]; edit: 
       <Row label="Width (mm)"><NumInput value={feature.width} step={0.5} onCommit={v => edit<IconFeature>(f => { f.width = v })} /></Row>
       <Row label="Height (mm)">
         <NumInput value={feature.height ?? feature.width} step={0.5} onCommit={v => edit<IconFeature>(f => { f.height = v })} />
+      </Row>
+      <Row label="Library" vertical>
+        <IconPicker featureId={feature.id} />
       </Row>
       <Row label="SVG asset">
         <TextInput value={feature.svgAsset ?? ''} placeholder="asset key"
@@ -434,6 +584,58 @@ const ShapeEditor: React.FC<{ feature: ShapeFeature; edit: EditFn }> = ({ featur
         <Row label="SVG path" vertical>
           <TextArea value={feature.svgPath ?? ''} rows={3} placeholder="M 0 0 L 10 0 ..."
             onCommit={v => edit<ShapeFeature>(f => { f.svgPath = v })} />
+        </Row>
+      )}
+    </Section>
+  )
+}
+
+// ── hole ─────────────────────────────────────────────────────────────
+
+const HoleEditor: React.FC<{ feature: HoleFeature; edit: EditFn }> = ({ feature, edit }) => {
+  const t = feature.holeType
+  return (
+    <Section title="Hole">
+      <div style={{ fontSize: 11, color: '#8b949e', padding: '2px 0 6px' }}>
+        Through-cut across the whole thickness. Enable the tab to add material
+        around the hole — that lets it sit on (or past) the card edge.
+      </div>
+      <Row label="Type">
+        <Select value={t} options={[['circle', 'Circle (keyring)'], ['slot', 'Slot (lanyard)']]}
+          onCommit={v => edit<HoleFeature>(f => {
+            f.holeType = v as HoleFeature['holeType']
+            if (f.holeType === 'circle') {
+              f.diameter = f.diameter ?? 5
+              delete f.width; delete f.height
+            } else {
+              f.width = f.width ?? 14
+              f.height = f.height ?? 5
+              delete f.diameter
+            }
+          })} />
+      </Row>
+      {t === 'circle' && (
+        <Row label="Diameter (mm)">
+          <NumInput value={feature.diameter ?? 5} step={0.5} onCommit={v => edit<HoleFeature>(f => { f.diameter = v })} />
+        </Row>
+      )}
+      {t === 'slot' && (
+        <>
+          <Row label="Width (mm)">
+            <NumInput value={feature.width ?? 14} step={0.5} onCommit={v => edit<HoleFeature>(f => { f.width = v })} />
+          </Row>
+          <Row label="Height (mm)">
+            <NumInput value={feature.height ?? 5} step={0.5} onCommit={v => edit<HoleFeature>(f => { f.height = v })} />
+          </Row>
+        </>
+      )}
+      <Row label="Tab (add material)">
+        <input type="checkbox" checked={feature.tab === true}
+          onChange={e => edit<HoleFeature>(f => { if (e.target.checked) f.tab = true; else { delete f.tab; delete f.tabMargin } })} />
+      </Row>
+      {feature.tab && (
+        <Row label="Tab margin (mm)">
+          <NumInput value={feature.tabMargin ?? 3} step={0.5} onCommit={v => edit<HoleFeature>(f => { f.tabMargin = v })} />
         </Row>
       )}
     </Section>
@@ -621,11 +823,27 @@ const DocumentInspector: React.FC<{ doc: DocumentV2; applyEdit: ApplyEdit }> = (
         {outline.type === 'rounded-rect' && <CornerRadiusEditor outline={outline} applyEdit={applyEdit} />}
 
         {outline.type === 'path' && (
-          <Row label="SVG path" vertical>
-            <TextArea value={outline.svgPath} rows={3} onCommit={v => applyEdit(d => {
-              if (d.object.outline.type === 'path') d.object.outline.svgPath = v
-            })} />
-          </Row>
+          <>
+            <Row label="Upload .svg">
+              <input type="file" accept=".svg,image/svg+xml" style={{ fontSize: 11, color: '#8b949e', maxWidth: 160 }}
+                onChange={e => {
+                  const file = e.target.files?.[0]
+                  if (!file) return
+                  void file.text().then(text => {
+                    const dPath = extractSvgPathD(text)
+                    if (dPath) applyEdit(d => {
+                      if (d.object.outline.type === 'path') d.object.outline.svgPath = dPath
+                    })
+                  })
+                  e.target.value = ''
+                }} />
+            </Row>
+            <Row label="SVG path" vertical>
+              <TextArea value={outline.svgPath} rows={3} onCommit={v => applyEdit(d => {
+                if (d.object.outline.type === 'path') d.object.outline.svgPath = v
+              })} />
+            </Row>
+          </>
         )}
       </Section>
 
@@ -841,7 +1059,10 @@ const NumInput: React.FC<{ value: number; step?: number; min?: number; max?: num
     placeholder={placeholder}
     onChange={e => {
       const n = e.target.valueAsNumber
-      if (!Number.isNaN(n)) onCommit(n)
+      if (Number.isNaN(n)) return
+      if (min != null && n < min) return
+      if (max != null && n > max) return
+      onCommit(n)
     }}
   />
 )

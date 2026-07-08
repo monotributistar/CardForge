@@ -224,3 +224,80 @@ export function findFeature(doc: DocumentV2, featureId: string): { feature: Feat
   }
   return null
 }
+
+// ── localStorage persistence ─────────────────────────────────────────
+// Every open document autosaves (debounced) under cardforge.doc.<id>, and
+// the open-tab list under cardforge.session — a reload restores the session
+// and the MenuBar "Recent" list offers every stored document.
+
+const DOC_KEY_PREFIX = 'cardforge.doc.'
+const SESSION_KEY = 'cardforge.session'
+
+export interface StoredDocInfo { id: string; name: string; savedAt: string }
+
+export function listStoredDocuments(): StoredDocInfo[] {
+  const out: StoredDocInfo[] = []
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (!key?.startsWith(DOC_KEY_PREFIX)) continue
+      const entry = JSON.parse(localStorage.getItem(key) ?? 'null')
+      if (entry?.data) out.push({ id: key.slice(DOC_KEY_PREFIX.length), name: entry.name ?? '?', savedAt: entry.savedAt ?? '' })
+    }
+  } catch { /* storage unavailable */ }
+  return out.sort((a, b) => b.savedAt.localeCompare(a.savedAt))
+}
+
+export function loadStoredDocument(id: string): DocumentV2 | null {
+  try {
+    const entry = JSON.parse(localStorage.getItem(DOC_KEY_PREFIX + id) ?? 'null')
+    return entry?.data ?? null
+  } catch { return null }
+}
+
+export function deleteStoredDocument(id: string): void {
+  try { localStorage.removeItem(DOC_KEY_PREFIX + id) } catch { /* ignore */ }
+}
+
+let persistTimer: ReturnType<typeof setTimeout> | null = null
+
+useDocumentStore.subscribe(state => {
+  if (persistTimer) clearTimeout(persistTimer)
+  persistTimer = setTimeout(() => {
+    try {
+      for (const tab of state.tabs) {
+        localStorage.setItem(DOC_KEY_PREFIX + tab.doc.meta.id, JSON.stringify({
+          name: tab.doc.meta.name,
+          savedAt: new Date().toISOString(),
+          data: tab.doc,
+        }))
+      }
+      const active = state.tabs.find(t => t.id === state.activeTabId)
+      localStorage.setItem(SESSION_KEY, JSON.stringify({
+        open: state.tabs.map(t => t.doc.meta.id),
+        active: active?.doc.meta.id ?? null,
+      }))
+    } catch { /* quota exceeded / storage unavailable — autosave is best-effort */ }
+  }, 800)
+})
+
+/** Reopen the previous session's tabs from localStorage. Returns true if at
+ * least one document was restored (App then skips the default blank tab). */
+export function restoreSession(): boolean {
+  try {
+    const session = JSON.parse(localStorage.getItem(SESSION_KEY) ?? 'null')
+    if (!session?.open?.length) return false
+    const store = useDocumentStore.getState()
+    let restoredActive: string | null = null
+    let restored = false
+    for (const id of session.open as string[]) {
+      const doc = loadStoredDocument(id)
+      if (!doc) continue
+      const tabId = store.newTab(doc)
+      restored = true
+      if (id === session.active) restoredActive = tabId
+    }
+    if (restoredActive) store.setActive(restoredActive)
+    return restored
+  } catch { return false }
+}

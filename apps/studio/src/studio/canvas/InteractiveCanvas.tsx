@@ -22,7 +22,7 @@ const RELIEF_BADGES: Record<string, string> = {
 // Drag gestures. `moved` gates the undo snapshot: only the first applyEdit
 // of a gesture snapshots, so undo restores the pre-drag state in one step.
 type DragState =
-  | { mode: 'move'; start: { x: number; y: number }; items: Array<{ id: string; x: number; y: number }>; collapseTo: string | null; moved: boolean }
+  | { mode: 'move'; start: { x: number; y: number }; items: Array<{ id: string; x: number; y: number }>; primary: string; collapseTo: string | null; moved: boolean }
   | { mode: 'scale'; featureId: string; center: { x: number; y: number }; startDiag: number; startScale: number; moved: boolean }
   | { mode: 'rotate'; featureId: string; center: { x: number; y: number }; moved: boolean }
 
@@ -47,6 +47,8 @@ export const InteractiveCanvas: React.FC = () => {
   const dragRef = useRef<DragState | null>(null)
   const panRef = useRef<{ startX: number; startY: number; baseX: number; baseY: number } | null>(null)
   const [, forceRender] = useState(0)
+  // Alignment guides shown while dragging (document-mm coordinates)
+  const [guides, setGuides] = useState<{ v: number[]; h: number[] }>({ v: [], h: [] })
 
   useEffect(() => {
     const el = containerRef.current
@@ -105,6 +107,7 @@ export const InteractiveCanvas: React.FC = () => {
       mode: 'move',
       start: pos,
       items,
+      primary: feature.id,
       collapseTo: alreadySelected && ids.length > 1 ? feature.id : null,
       moved: false,
     }
@@ -153,15 +156,52 @@ export const InteractiveCanvas: React.FC = () => {
       // Snapshot only once per drag gesture so undo restores the start state.
       if (drag.mode === 'move') {
         const pos = clientToDoc(e.clientX, e.clientY)
-        const dx = pos.x - drag.start.x
-        const dy = pos.y - drag.start.y
+        let dx = pos.x - drag.start.x
+        let dy = pos.y - drag.start.y
+        // ── Snap to card center / other features' edges & centers ──────
+        // (hold Alt to disable). Threshold ≈ 6 screen px in mm.
+        const activeGuides: { v: number[]; h: number[] } = { v: [], h: [] }
+        if (!e.altKey && doc) {
+          const prim = drag.items.find(i => i.id === drag.primary) ?? drag.items[0]
+          const found = findFeature(doc, prim.id)
+          if (found) {
+            const pb = getFeatureBoundsMm(found.feature, cardW, cardH)
+            const draggedIds = new Set(drag.items.map(i => i.id))
+            const xTargets: number[] = [cardW / 2]
+            const yTargets: number[] = [cardH / 2]
+            for (const other of features) {
+              if (draggedIds.has(other.id) || other.visible === false) continue
+              const ob = getFeatureBoundsMm(other, cardW, cardH)
+              xTargets.push(ob.x, ob.x + ob.w / 2, ob.x + ob.w)
+              yTargets.push(ob.y, ob.y + ob.h / 2, ob.y + ob.h)
+            }
+            const thr = 6 / (PX_PER_MM * viewport.zoom)
+            const tentX = prim.x + dx
+            const tentY = prim.y + dy
+            const xLines = [tentX, tentX + pb.w / 2, tentX + pb.w]
+            const yLines = [tentY, tentY + pb.h / 2, tentY + pb.h]
+            let bestX: { d: number; at: number } | null = null
+            for (const line of xLines) for (const t of xTargets) {
+              const d = t - line
+              if (Math.abs(d) <= thr && (!bestX || Math.abs(d) < Math.abs(bestX.d))) bestX = { d, at: t }
+            }
+            let bestY: { d: number; at: number } | null = null
+            for (const line of yLines) for (const t of yTargets) {
+              const d = t - line
+              if (Math.abs(d) <= thr && (!bestY || Math.abs(d) < Math.abs(bestY.d))) bestY = { d, at: t }
+            }
+            if (bestX) { dx += bestX.d; activeGuides.v.push(bestX.at) }
+            if (bestY) { dy += bestY.d; activeGuides.h.push(bestY.at) }
+          }
+        }
+        setGuides(activeGuides)
         applyEdit(d => {
           for (const item of drag.items) {
             for (const face of ['front', 'back'] as const) {
               const f = d.faces[face]?.features.find(f => f.id === item.id)
               if (f) {
-                f.transform.x = Math.round((item.x + dx) * 10) / 10
-                f.transform.y = Math.round((item.y + dy) * 10) / 10
+                f.transform.x = Math.round((item.x + dx) * 100) / 100
+                f.transform.y = Math.round((item.y + dy) * 100) / 100
               }
             }
           }
@@ -201,7 +241,7 @@ export const InteractiveCanvas: React.FC = () => {
     if (pan) {
       setViewport(v => ({ ...v, offsetX: pan.baseX + (e.clientX - pan.startX), offsetY: pan.baseY + (e.clientY - pan.startY) }))
     }
-  }, [clientToDoc, applyEdit])
+  }, [clientToDoc, applyEdit, doc, features, cardW, cardH, viewport.zoom])
 
   const handlePointerUp = useCallback(() => {
     const drag = dragRef.current
@@ -211,6 +251,7 @@ export const InteractiveCanvas: React.FC = () => {
     }
     dragRef.current = null
     panRef.current = null
+    setGuides({ v: [], h: [] })
     forceRender(n => n + 1)
   }, [select])
 
@@ -218,6 +259,31 @@ export const InteractiveCanvas: React.FC = () => {
     const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1
     setViewport(v => ({ ...v, zoom: Math.max(0.25, Math.min(6, v.zoom * factor)) }))
   }, [])
+
+  // Align every selected feature to the PRIMARY selection (last clicked)
+  const alignSelection = (edge: 'left' | 'centerX' | 'right' | 'top' | 'centerY' | 'bottom') => {
+    if (!doc || !primaryId || selectedIds.length < 2) return
+    const primFound = findFeature(doc, primaryId)
+    if (!primFound) return
+    const pb = getFeatureBoundsMm(primFound.feature, cardW, cardH)
+    applyEdit(d => {
+      for (const id of selectedIds) {
+        if (id === primaryId) continue
+        const found = findFeature(d, id)
+        if (!found) continue
+        const fb = getFeatureBoundsMm(found.feature, cardW, cardH)
+        const t = found.feature.transform
+        if (edge === 'left') t.x = pb.x
+        else if (edge === 'right') t.x = pb.x + pb.w - fb.w
+        else if (edge === 'centerX') t.x = pb.x + pb.w / 2 - fb.w / 2
+        else if (edge === 'top') t.y = pb.y
+        else if (edge === 'bottom') t.y = pb.y + pb.h - fb.h
+        else t.y = pb.y + pb.h / 2 - fb.h / 2
+        t.x = Math.round(t.x * 100) / 100
+        t.y = Math.round(t.y * 100) / 100
+      }
+    })
+  }
 
   const zoomBy = (factor: number) =>
     setViewport(v => ({ ...v, zoom: Math.max(0.25, Math.min(6, v.zoom * factor)) }))
@@ -250,6 +316,18 @@ export const InteractiveCanvas: React.FC = () => {
         <span style={{ fontSize: 11, color: '#8b949e', minWidth: 38, textAlign: 'center' }}>{Math.round(viewport.zoom * 100)}%</span>
         <Btn onClick={() => zoomBy(1.25)}>+</Btn>
         <Btn onClick={resetView}>Reset</Btn>
+        {selectedIds.length >= 2 && (
+          <>
+            <span style={{ width: 1, height: 16, background: '#30363d', margin: '0 4px' }} />
+            <span style={{ fontSize: 10, color: '#484f58' }}>Align</span>
+            <Btn title="Alinear izquierdas (al primario)" onClick={() => alignSelection('left')}>⇤</Btn>
+            <Btn title="Centrar en X (al primario)" onClick={() => alignSelection('centerX')}>⇹</Btn>
+            <Btn title="Alinear derechas (al primario)" onClick={() => alignSelection('right')}>⇥</Btn>
+            <Btn title="Alinear superiores (al primario)" onClick={() => alignSelection('top')}>⤒</Btn>
+            <Btn title="Centrar en Y (al primario)" onClick={() => alignSelection('centerY')}>⇕</Btn>
+            <Btn title="Alinear inferiores (al primario)" onClick={() => alignSelection('bottom')}>⤓</Btn>
+          </>
+        )}
       </div>
 
       {/* Canvas area */}
@@ -287,6 +365,16 @@ export const InteractiveCanvas: React.FC = () => {
             fill="none" stroke="#30363d" strokeWidth={0.2} strokeDasharray="1.5 1.5"
             pointerEvents="none"
           />
+
+          {/* Alignment guides while dragging */}
+          {guides.v.map(x => (
+            <line key={`gv-${x}`} x1={x} y1={-2} x2={x} y2={cardH + 2}
+              stroke="#e3b341" strokeWidth={0.25} strokeDasharray="1 0.8" pointerEvents="none" />
+          ))}
+          {guides.h.map(y => (
+            <line key={`gh-${y}`} x1={-2} y1={y} x2={cardW + 2} y2={y}
+              stroke="#e3b341" strokeWidth={0.25} strokeDasharray="1 0.8" pointerEvents="none" />
+          ))}
 
           {/* Features */}
           {features.filter(f => f.visible !== false).map(f => {
@@ -456,6 +544,62 @@ const ObjectOutline: React.FC<{ outline: Outline; fill: Fill | undefined; select
   )
 }
 
+// ── Inline SVG preview (icon features) ───────────────────────────────
+
+// Parsed + sanitized inline SVGs, keyed by source text. `null` = unparseable.
+const svgParseCache = new Map<string, { inner: string; viewBox: string } | null>()
+// Measured artwork bounding boxes ("x y w h"), keyed by source text.
+const svgBBoxCache = new Map<string, string>()
+
+function parseSvgForPreview(svgText: string): { inner: string; viewBox: string } | null {
+  const hit = svgParseCache.get(svgText)
+  if (hit !== undefined) return hit
+  const dom = new DOMParser().parseFromString(svgText, 'image/svg+xml')
+  let out: { inner: string; viewBox: string } | null = null
+  if (!dom.querySelector('parsererror')) {
+    dom.querySelectorAll('script, foreignObject').forEach(el => el.remove())
+    dom.querySelectorAll('*').forEach(el => {
+      for (const a of [...el.attributes]) if (a.name.startsWith('on')) el.removeAttribute(a.name)
+    })
+    const root = dom.documentElement
+    out = { inner: root.innerHTML, viewBox: root.getAttribute('viewBox') ?? '' }
+  }
+  svgParseCache.set(svgText, out)
+  return out
+}
+
+// Draws the feature's inline SVG inside its bounds. The viewBox is the
+// measured artwork bbox — matching the kernel, which scales the filled
+// shapes' bbox (not the viewBox) to the feature width, anchored top-left.
+const SvgGlyph: React.FC<{ svgText: string; bounds: BoundsMm; stretch: boolean }> = ({ svgText, bounds: b, stretch }) => {
+  const parsed = parseSvgForPreview(svgText)
+  const [measuredVb, setMeasuredVb] = useState<string | undefined>(() => svgBBoxCache.get(svgText))
+  const ref = useRef<SVGSVGElement>(null)
+
+  useEffect(() => {
+    const cached = svgBBoxCache.get(svgText)
+    if (cached) { setMeasuredVb(cached); return }
+    const el = ref.current
+    if (!el) return
+    const bb = el.getBBox()
+    if (bb.width > 0 && bb.height > 0) {
+      const vb = `${bb.x} ${bb.y} ${bb.width} ${bb.height}`
+      svgBBoxCache.set(svgText, vb)
+      setMeasuredVb(vb)
+    }
+  }, [svgText])
+
+  if (!parsed) return null
+  return (
+    <svg
+      ref={ref} x={b.x} y={b.y} width={b.w} height={b.h}
+      viewBox={measuredVb ?? (parsed.viewBox || undefined)}
+      preserveAspectRatio={stretch ? 'none' : 'xMinYMin meet'}
+      dangerouslySetInnerHTML={{ __html: parsed.inner }}
+    />
+  )
+}
+
 // ── Per-type glyphs ──────────────────────────────────────────────────
 
 const FeatureGlyph: React.FC<{ feature: Feature; bounds: BoundsMm; color: string }> = ({ feature, bounds: b, color }) => {
@@ -507,6 +651,9 @@ const FeatureGlyph: React.FC<{ feature: Feature; bounds: BoundsMm; color: string
     case 'pattern':
       return <rect x={b.x} y={b.y} width={b.w} height={b.h} fill={`url(#hatch-${feature.id})`} />
     case 'icon':
+      if (feature.svgInline) {
+        return <SvgGlyph svgText={feature.svgInline} bounds={b} stretch={!!feature.height} />
+      }
       return (
         <g>
           <text x={b.x + b.w / 2} y={b.y + b.h / 2 + 1} fontSize={Math.min(b.w, b.h) * 0.5} textAnchor="middle" style={{ userSelect: 'none' }}>🖼</text>
@@ -517,7 +664,30 @@ const FeatureGlyph: React.FC<{ feature: Feature; bounds: BoundsMm; color: string
       )
     case 'shape':
       return <ShapeGlyph feature={feature} bounds={b} color={color} />
+    case 'hole':
+      return <HoleGlyph feature={feature} bounds={b} color={color} />
   }
+}
+
+// Hole: dark void (through-cut) + dashed lug outline when tab is on.
+const HoleGlyph: React.FC<{ feature: Extract<Feature, { type: 'hole' }>; bounds: BoundsMm; color: string }> = ({ feature: f, bounds: b, color }) => {
+  const hole = { fill: 'rgba(0,0,0,0.55)', stroke: color, strokeWidth: 0.35 }
+  const m = f.tab ? (f.tabMargin ?? 3) : 0
+  const tab = f.tab && (
+    f.holeType === 'slot'
+      ? <rect x={b.x - m} y={b.y - m} width={b.w + 2 * m} height={b.h + 2 * m} rx={b.h / 2 + m}
+          fill="none" stroke={color} strokeWidth={0.3} strokeDasharray="1 0.8" opacity={0.7} />
+      : <circle cx={b.x + b.w / 2} cy={b.y + b.h / 2} r={b.w / 2 + m}
+          fill="none" stroke={color} strokeWidth={0.3} strokeDasharray="1 0.8" opacity={0.7} />
+  )
+  return (
+    <g>
+      {tab}
+      {f.holeType === 'slot'
+        ? <rect x={b.x} y={b.y} width={b.w} height={b.h} rx={b.h / 2} {...hole} />
+        : <circle cx={b.x + b.w / 2} cy={b.y + b.h / 2} r={b.w / 2} {...hole} />}
+    </g>
+  )
 }
 
 const ShapeGlyph: React.FC<{ feature: Extract<Feature, { type: 'shape' }>; bounds: BoundsMm; color: string }> = ({ feature: f, bounds: b, color }) => {
@@ -569,9 +739,9 @@ const ShapeGlyph: React.FC<{ feature: Extract<Feature, { type: 'shape' }>; bound
 
 // ── Buttons ──────────────────────────────────────────────────────────
 
-const Btn: React.FC<{ active?: boolean; onClick: () => void; children: React.ReactNode }> =
-  ({ active, onClick, children }) => (
-    <button onClick={onClick} style={{
+const Btn: React.FC<{ active?: boolean; onClick: () => void; children: React.ReactNode; title?: string }> =
+  ({ active, onClick, children, title }) => (
+    <button onClick={onClick} title={title} style={{
       background: active ? '#1f6feb' : '#21262d', color: active ? '#fff' : '#8b949e',
       border: '1px solid #30363d', padding: '2px 10px', borderRadius: 4, cursor: 'pointer', fontSize: 11,
     }}>{children}</button>

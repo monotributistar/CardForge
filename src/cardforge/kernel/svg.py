@@ -7,11 +7,12 @@ conversion. Curves are flattened by uniform sampling per subpath.
 
 from __future__ import annotations
 
+from functools import lru_cache
 from io import StringIO
 from typing import Dict, List, Tuple
 
 from manifold3d import CrossSection, FillRule
-from svgelements import SVG, Path as SvgPath, Shape
+from svgelements import SVG, Close, Line, Move, Path as SvgPath, Shape
 
 Point = Tuple[float, float]
 
@@ -23,26 +24,42 @@ class SVGParseError(Exception):
 
 
 def _path_contours(path: SvgPath) -> List[List[Point]]:
+    """Flatten a path by sampling each SEGMENT in closed form.
+
+    Never goes through Path.point(t): that maps t by arc length, which
+    computes every segment's length via recursive quadrature — hundreds of
+    ms for a single detailed icon. Per-segment evaluation is exact for
+    lines and a direct polynomial for curves.
+    """
     contours: List[List[Point]] = []
     for sub in path.as_subpaths():
         sp = SvgPath(sub)
-        seg_count = len(sp)
-        if seg_count == 0:
-            continue
-        n = max(8, SAMPLES_PER_SEGMENT * seg_count)
-        pts = []
-        for i in range(n):
-            pt = sp.point(i / (n - 1))
-            if pt is not None:
-                pts.append((float(pt.x), float(pt.y)))
+        pts: List[Point] = []
+        for seg in sp:
+            if isinstance(seg, Move):
+                if seg.end is not None:
+                    pts.append((float(seg.end.x), float(seg.end.y)))
+                continue
+            if seg.end is None:
+                continue
+            if isinstance(seg, (Line, Close)):
+                pts.append((float(seg.end.x), float(seg.end.y)))
+            else:  # Quadratic/Cubic Bezier, Arc — closed-form point(t)
+                for i in range(1, SAMPLES_PER_SEGMENT + 1):
+                    pt = seg.point(i / SAMPLES_PER_SEGMENT)
+                    pts.append((float(pt.x), float(pt.y)))
         if len(pts) >= 3:
             contours.append(pts)
     return contours
 
 
+@lru_cache(maxsize=64)
 def svg_to_color_shapes(svg_source: str, target_width: float,
                         target_height: float = 0.0) -> Dict[str, CrossSection]:
-    """Parse SVG markup → {fill_hex → CrossSection}.
+    """Parse SVG markup → {fill_hex → CrossSection}. Cached — Studio
+    recompiles on every edit and the SVG source rarely changes; callers
+    must treat the returned CrossSections as immutable (they are: every
+    manifold3d op returns a new object).
 
     Output is feature-local (anchor at the artwork's top-left, y-up), scaled
     so the artwork's bounding box width == target_width (aspect preserved

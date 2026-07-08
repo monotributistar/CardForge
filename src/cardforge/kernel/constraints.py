@@ -38,19 +38,22 @@ def check_constraints(doc: DocumentV2, trace: CompileTrace) -> List[ConstraintIs
                     f"Feature is {r.bounds.width:.2f}×{r.bounds.height:.2f}mm; "
                     f"minimum printable size is {MIN_FEATURE_MM}mm", **loc))
 
-        # 2. Inside the object outline
-        if not outline.contains(r.bounds):
+        # 2. Inside the object outline. Holes are exempt: with a tab they
+        #    legitimately live (partly) outside the outline, and without one
+        #    the compiler already emits the specific "open notch" warning.
+        if not outline.contains(r.bounds) and r.type != "hole":
             issues.append(ConstraintIssue(
                 Severity.ERROR, "outside-bounds",
                 f"Feature extends outside the object outline "
                 f"(bounds {r.bounds.x:.1f},{r.bounds.y:.1f} "
                 f"{r.bounds.width:.1f}×{r.bounds.height:.1f}mm)", **loc))
         # 3. Safe margin (warning). Edge-hugging decorations are exempt:
-        #    frames and corner marks legitimately live at the border.
+        #    frames and corner marks legitimately live at the border — and so
+        #    do holes (a lanyard slot hugs the edge by design).
         edge_decoration = r.extra.get("shape_type") in ("frame", "corner-marks")
         if outline.contains(r.bounds) \
                 and not outline.expand(-SAFE_MARGIN_MM).contains(r.bounds) \
-                and r.type not in ("pattern", "text-pattern") \
+                and r.type not in ("pattern", "text-pattern", "hole") \
                 and not edge_decoration:
             issues.append(ConstraintIssue(
                 Severity.WARNING, "safe-margin",

@@ -33,6 +33,12 @@ class FeatureShapes:
     shapes: List[Tuple[str, CrossSection]] = field(default_factory=list)
     record: Optional[FeatureRecord] = None
     skip_reason: str = ""
+    # Exclusion region (physical space): lower-priority features must not
+    # place geometry here even where this feature has none (QR quiet zone).
+    keepout: Optional[CrossSection] = None
+    # hole feature with tab=true: material lug (physical space) the compiler
+    # fuses into the base region — lets the hole live outside the outline.
+    tab: Optional[CrossSection] = None
 
 
 def _doc_to_phys_anchor(x: float, y: float, obj_h: float) -> Tuple[float, float]:
@@ -80,22 +86,38 @@ def build_feature_shapes(doc: DocumentV2, face_id: str, feature: Feature,
         return s2.place(local, px, py, rotation_deg=rot, scale=scale)
 
     shapes: List[Tuple[str, CrossSection]] = []
+    keepout: Optional[CrossSection] = None
 
     if f.type == "text-block":
-        result = text_block(
-            f.lines, f.font.family, f.font.size,
-            weight=f.font.weight, axes=f.font.axes,
-            align=f.align, line_height=f.line_height,
-        )
+        try:
+            result = text_block(
+                f.lines, f.font.family, f.font.size,
+                weight=f.font.weight, axes=f.font.axes, italic=f.font.italic,
+                align=f.align, line_height=f.line_height,
+            )
+        except Exception as e:  # missing family, bitmap/corrupt font tables
+            return FeatureShapes(
+                skip_reason=f"font '{f.font.family}' cannot be rendered: {e}")
         extra["font_size"] = f.font.size
         shapes = [(f.material, placed(result.cross_section))]
 
     elif f.type == "text-pattern":
-        unit = text_block([f.text], f.font.family, f.font.size,
-                          weight=f.font.weight, axes=f.font.axes).cross_section
+        try:
+            unit = text_block([f.text], f.font.family, f.font.size,
+                              weight=f.font.weight, axes=f.font.axes,
+                              italic=f.font.italic).cross_section
+        except Exception as e:
+            return FeatureShapes(
+                skip_reason=f"font '{f.font.family}' cannot be rendered: {e}")
         if unit.is_empty():
             return FeatureShapes(skip_reason="text-pattern rendered empty")
-        cs = pat.repeat_shape(outline_phys, unit, f.spacing, angle_deg=-f.angle)
+        # spacing is the GAP between repetitions, not the tile step — so the
+        # pattern stays consistent when the text (and its width) changes.
+        u0x, u0y, u1x, u1y = unit.bounds()
+        step_x = (u1x - u0x) + f.spacing
+        step_y = (u1y - u0y) + (f.spacing_y or f.spacing)
+        cs = pat.repeat_shape(outline_phys, unit, step_x, angle_deg=-f.angle,
+                              spacing_y=step_y)
         extra["font_size"] = f.font.size
         shapes = [(f.material, cs)]
 
@@ -104,7 +126,32 @@ def build_feature_shapes(doc: DocumentV2, face_id: str, feature: Feature,
             region = outline_phys
         else:
             region = placed(s2.rect(f.width, f.height)) ^ outline_phys
-        if f.pattern_type == "dots":
+        if f.pattern_type == "svg":
+            # SVG motif repeat — multicolor: each fill color can map to a
+            # different material via colorMap (same contract as icon).
+            if not f.svg_inline:
+                return FeatureShapes(skip_reason="svg pattern has no SVG source")
+            try:
+                motif = svg_to_color_shapes(f.svg_inline, f.element_size or 6.0)
+            except SVGParseError as e:
+                return FeatureShapes(skip_reason=str(e))
+            if not motif:
+                return FeatureShapes(skip_reason="svg pattern has no filled shapes")
+            # spacing = gap between motif repetitions (see text-pattern)
+            bs = [cs.bounds() for cs in motif.values()]
+            m_w = max(b[2] for b in bs) - min(b[0] for b in bs)
+            m_h = max(b[3] for b in bs) - min(b[1] for b in bs)
+            tiled = pat.repeat_color_shapes(region, motif, m_w + f.spacing,
+                                            angle_deg=-f.angle,
+                                            spacing_y=m_h + (f.spacing_y or f.spacing))
+            if not tiled:
+                return FeatureShapes(skip_reason="svg pattern rendered empty")
+            extra["element_mm"] = f.element_size or 6.0
+            extra["icon_colors"] = len(motif)
+            for color, cs in sorted(tiled.items()):
+                mat = f.color_map.get(color, f.material)
+                shapes.append((mat, cs))
+        elif f.pattern_type == "dots":
             d = f.element_size or f.spacing * 0.4
             cs = pat.dots(region, f.spacing, d, angle_deg=-f.angle)
             extra["element_mm"] = d
@@ -122,7 +169,8 @@ def build_feature_shapes(doc: DocumentV2, face_id: str, feature: Feature,
             extra["element_mm"] = w
         else:
             return FeatureShapes(skip_reason=f"unknown patternType '{f.pattern_type}'")
-        shapes = [(f.material, cs)]
+        if f.pattern_type != "svg":  # svg already appended per-color shapes
+            shapes = [(f.material, cs)]
 
     elif f.type == "qr":
         payload = format_qr_payload(f.qr_type, f.fields)
@@ -133,6 +181,10 @@ def build_feature_shapes(doc: DocumentV2, face_id: str, feature: Feature,
         extra["qr_module_mm"] = result.module_mm
         extra["qr_quiet_mm"] = f.quiet_zone
         shapes = [(f.material, placed(result.cross_section))]
+        # The full square INCLUDING the quiet zone is a keep-out: the quiet
+        # zone must stay flat/uniform or the code stops scanning.
+        total = f.size + 2 * f.quiet_zone
+        keepout = placed(s2.rect(total, total))
 
     elif f.type == "icon":
         try:
@@ -181,6 +233,19 @@ def build_feature_shapes(doc: DocumentV2, face_id: str, feature: Feature,
         extra["shape_type"] = f.shape_type
         shapes = [(f.material, placed(local))]
 
+    elif f.type == "hole":
+        # Always a through-cut: circle (keyring) or slot (lanyard/credential
+        # strap — a stadium: rounded-rect with full-radius ends).
+        if f.hole_type == "circle":
+            local = s2.circle(f.diameter or 5.0)
+        elif f.hole_type == "slot":
+            w, h = f.width or 14.0, f.height or 5.0
+            local = s2.rounded_rect(w, h, h / 2)
+        else:
+            return FeatureShapes(skip_reason=f"unknown holeType '{f.hole_type}'")
+        extra["hole_type"] = f.hole_type
+        shapes = [(f.material, placed(local))]
+
     else:
         return FeatureShapes(skip_reason=f"unknown feature type '{f.type}'")
 
@@ -194,20 +259,38 @@ def build_feature_shapes(doc: DocumentV2, face_id: str, feature: Feature,
 
     # Thinnest printable detail (mm) — compared against the nozzle downstream.
     # Cuts are holes; their "width" isn't a printable wall, so skip.
-    if f.relief.mode != "cut":
+    if f.relief.mode != "cut" and f.type != "hole":
         extra["min_width_mm"] = round(min_feature_width(union), 3)
+
+    # Hole tab: the hole outline dilated by tabMargin (round join) — a lug
+    # the compiler fuses into the base so the hole can sit past the edge.
+    tab_cs: Optional[CrossSection] = None
+    if f.type == "hole" and f.tab:
+        tab_cs = union.offset(f.tab_margin or 3.0, 0)  # 0 = Round join
+
+    # Solid content features claim their bounding box as keep-out, so tiled
+    # backgrounds (text patterns, tramas) can't interleave with their glyphs.
+    # QR set a wider box above (quiet zone); patterns/shapes claim nothing —
+    # they ARE the background / decorative layers.
+    if keepout is None and f.type in ("text-block", "icon"):
+        bx0, by0, bx1, by1 = union.bounds()
+        keepout = CrossSection([[(bx0, by0), (bx1, by0), (bx1, by1), (bx0, by1)]])
 
     relief_value = (f.relief.height if f.relief.mode == "emboss"
                     else 0.0 if f.relief.mode == "cut" else f.relief.depth)
+    # A hole is a through-cut by definition, whatever relief the doc carries.
+    relief_mode = "cut" if f.type == "hole" else f.relief.mode
+    if f.type == "hole":
+        relief_value = 0.0
     record = FeatureRecord(
         feature_id=f.id,
         face_id=face_id,
         type=f.type,
         material=f.material,
-        relief_mode=f.relief.mode,
+        relief_mode=relief_mode,
         relief_value=relief_value,
         bounds=_phys_bounds_to_doc(union, obj_h),
         area=sum(cs.area() for cs in non_empty),
         extra=extra,
     )
-    return FeatureShapes(shapes=shapes, record=record)
+    return FeatureShapes(shapes=shapes, record=record, keepout=keepout, tab=tab_cs)

@@ -99,3 +99,99 @@ class TestPatterns:
         cs = patterns.repeat_shape(self.REGION, unit, spacing=6, angle_deg=-25)
         assert cs.area() > unit.area() * 8, "many tiles must survive clipping"
         assert cs.area() < self.REGION.area()
+
+    def test_tile_positions_independent_row_spacing(self):
+        pts = list(patterns.tile_positions(self.REGION, 5.0, spacing_y=10.0))
+        ys = sorted({round(y, 6) for _, y in pts})
+        assert all(b - a == pytest.approx(10.0) for a, b in zip(ys, ys[1:]))
+        xs_one_row = sorted({round(x, 6) for x, y in pts if y == ys[0]})
+        assert all(b - a == pytest.approx(5.0)
+                   for a, b in zip(xs_one_row, xs_one_row[1:]))
+
+    def test_repeat_shape_spacing_y_thins_rows(self):
+        from cardforge.kernel.shapes2d import rect
+        unit = rect(2, 1)
+        uniform = patterns.repeat_shape(self.REGION, unit, spacing=6).area()
+        stretched = patterns.repeat_shape(self.REGION, unit, spacing=6,
+                                          spacing_y=12).area()
+        assert stretched < uniform * 0.75, "wider rows must place fewer tiles"
+
+
+class TestSvgMotifPattern:
+    REGION = rounded_rect(40, 20, 2)
+    TWO_COLOR = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 10">
+      <rect x="0" y="0" width="10" height="10" fill="#ff0000"/>
+      <circle cx="15" cy="5" r="4" fill="#0000ff"/></svg>'''
+
+    def test_repeat_color_shapes_keeps_colors_aligned(self):
+        from cardforge.kernel.svg import svg_to_color_shapes
+        motif = svg_to_color_shapes(self.TWO_COLOR, 8.0)
+        assert set(motif) == {"#ff0000", "#0000ff"}
+        tiled = patterns.repeat_color_shapes(self.REGION, motif, spacing=12.0)
+        assert set(tiled) == {"#ff0000", "#0000ff"}
+        # same tile grid → colors never overlap (they don't in the source)
+        inter = (tiled["#ff0000"] ^ tiled["#0000ff"]).area()
+        assert inter < 1e-6
+        for cs in tiled.values():
+            assert 0 < cs.area() < self.REGION.area()
+
+    def test_svg_pattern_feature_maps_colors_to_materials(self):
+        from tests.kernel.test_compile import make_doc
+        doc = make_doc(front=[{
+            "id": "trama", "type": "pattern", "patternType": "svg",
+            "transform": {"x": 0, "y": 0}, "material": "text",
+            "relief": {"mode": "emboss", "height": 0.4},
+            "spacing": 12, "spacingY": 9, "elementSize": 6,
+            "svgInline": self.TWO_COLOR,
+            "colorMap": {"#ff0000": "text", "#0000ff": "accent"},
+        }])
+        from cardforge.kernel.compile import compile_document
+        scene, trace = compile_document(doc)
+        vols = scene.non_empty()
+        assert "text" in vols and "accent" in vols
+        part_ids = {p.id for p in scene.non_empty_parts()}
+        assert part_ids == {"base", "trama", "trama:accent"}
+
+    def test_gap_semantics_tiles_never_merge(self):
+        """spacing is the GAP between motif repetitions: even a tight gap
+        keeps tiles separate regardless of motif size (before, spacing was
+        the center step, so any motif wider than it merged into a blob)."""
+        from tests.kernel.test_compile import make_doc
+        from cardforge.kernel.compile import compile_document
+        svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#ff0000"/></svg>'
+        doc = make_doc(front=[{
+            "id": "trama", "type": "pattern", "patternType": "svg",
+            "transform": {"x": 0, "y": 0}, "material": "text",
+            "relief": {"mode": "emboss", "height": 0.4},
+            "spacing": 2, "elementSize": 8,  # 8mm motif, 2mm gap
+            "svgInline": svg, "colorMap": {"#ff0000": "text"},
+        }])
+        scene, _ = compile_document(doc)
+        tiles = scene.non_empty().get("text").decompose()
+        assert len(tiles) > 2, "several separate tiles expected"
+        for t in tiles:
+            bb = t.bounding_box()
+            assert bb[3] - bb[0] <= 8 + 1e-6, "tiles merged — gap not honored"
+
+    def test_text_pattern_gap_consistent_across_texts(self):
+        """Changing the text must keep tiles separated (spacing = gap)."""
+        from tests.kernel.test_compile import make_doc
+        from cardforge.kernel.compile import compile_document
+        from cardforge.kernel.text import text_block
+
+        def max_component_width(text):
+            doc = make_doc(front=[{
+                "id": "tp", "type": "text-pattern", "text": text,
+                "transform": {"x": 0, "y": 0}, "material": "text",
+                "relief": {"mode": "emboss", "height": 0.4},
+                "font": {"family": "Helvetica Neue", "size": 4}, "spacing": 3,
+            }])
+            scene, _ = compile_document(doc)
+            comps = scene.non_empty()["text"].decompose()
+            return max(c.bounding_box()[3] - c.bounding_box()[0] for c in comps)
+
+        for text in ("AA", "AAAAAAAA"):
+            unit = text_block([text], "Helvetica Neue", 4.0).cross_section
+            unit_w = unit.bounds()[2] - unit.bounds()[0]
+            assert max_component_width(text) <= unit_w + 1e-6, \
+                f"tiles of '{text}' merged with neighbors"

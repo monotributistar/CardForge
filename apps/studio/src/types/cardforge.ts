@@ -13,7 +13,7 @@ export type Fill =
   | { type: 'solid' }
   | { type: 'lattice'; pattern: 'dots' | 'lines' | 'grid' | 'hex'; spacing: number; lineWidth?: number; border?: number }
 
-export interface Backing { mode: 'auto' | 'on' | 'off'; thickness?: number; material?: string }
+export interface Backing { mode: 'auto' | 'on' | 'off'; thickness?: number; material?: string; padding?: number; shape?: 'rect' | 'circle' }
 
 export interface DocumentV2 {
   cardforge: '2.0'
@@ -36,11 +36,16 @@ export interface Relief { mode: ReliefMode; height?: number; depth?: number; flo
 export interface FontSpec { family: string; size: number; weight?: number; italic?: boolean; axes?: Record<string, number> }
 export interface FeatureBase { id: string; type: string; name?: string; transform: { x: number; y: number; rotation?: number; scale?: number }; material: string; relief: Relief; zOrder?: number; visible?: boolean; backing?: Backing }
 export interface TextBlockFeature extends FeatureBase { type: 'text-block'; lines: string[]; font: FontSpec; align?: 'left'|'center'|'right'; lineHeight?: number }
-export interface TextPatternFeature extends FeatureBase { type: 'text-pattern'; text: string; font: FontSpec; spacing: number; angle?: number }
-export interface PatternFeature extends FeatureBase { type: 'pattern'; patternType: 'dots'|'lines'|'grid'|'hex'; spacing: number; angle?: number; elementSize?: number; region?: 'face'|'bounds'; width?: number; height?: number }
+export interface TextPatternFeature extends FeatureBase { type: 'text-pattern'; text: string; font: FontSpec; spacing: number; spacingY?: number; angle?: number }
+export interface PatternFeature extends FeatureBase { type: 'pattern'; patternType: 'dots'|'lines'|'grid'|'hex'|'svg'; spacing: number; spacingY?: number; angle?: number; elementSize?: number; region?: 'face'|'bounds'; width?: number; height?: number; svgInline?: string; colorMap?: Record<string, string> }
 export interface QRFeature extends FeatureBase { type: 'qr'; qrType: 'url'|'vcard'|'wifi'|'email'|'text'; fields: Record<string, string>; size: number; errorCorrection?: 'L'|'M'|'Q'|'H'; quietZone?: number }
 export interface IconFeature extends FeatureBase { type: 'icon'; svgAsset?: string; svgInline?: string; width: number; height?: number; colorMap?: Record<string, string> }
 export interface ShapeFeature extends FeatureBase { type: 'shape'; shapeType: 'rect'|'rounded-rect'|'circle'|'ring'|'frame'|'corner-marks'|'path'; width?: number; height?: number; radius?: number; diameter?: number; strokeWidth?: number; inset?: number; length?: number; svgPath?: string }
-export type Feature = TextBlockFeature|TextPatternFeature|PatternFeature|QRFeature|IconFeature|ShapeFeature
+// Hole — always a through-cut. circle (keyring) uses diameter; slot
+// (lanyard/credential) uses width×height with full-radius ends. `tab` adds a
+// material lug (hole dilated by tabMargin) fused into the base, so the hole
+// can sit outside the outline.
+export interface HoleFeature extends FeatureBase { type: 'hole'; holeType: 'circle'|'slot'; diameter?: number; width?: number; height?: number; tab?: boolean; tabMargin?: number }
+export type Feature = TextBlockFeature|TextPatternFeature|PatternFeature|QRFeature|IconFeature|ShapeFeature|HoleFeature
 
 export type FaceId = 'front' | 'back'

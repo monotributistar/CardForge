@@ -7,6 +7,13 @@
       "runtimeArgs": ["--filter", "@cardforge/studio", "dev"],
       "port": 5173,
       "autoPort": false
+    },
+    {
+      "name": "studio-5175",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@cardforge/studio", "dev", "--port", "5175", "--strictPort"],
+      "port": 5175,
+      "autoPort": false
     }
   ]
 }

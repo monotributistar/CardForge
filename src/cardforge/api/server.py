@@ -69,6 +69,39 @@ def _issues_json(issues):
     ]
 
 
+def _parts_json(scene, doc):
+    """Per-part manifest for the 3D viewer: maps every 3MF mesh (by its
+    object name) back to the feature it came from, with mm dimensions."""
+    from cardforge.export.threemf import normalized_parts, part_label
+
+    feature_ids = {f.id for _, f in doc.all_features()}
+
+    def feature_of(part_id: str):
+        if part_id == "base":
+            return None
+        pid = part_id.split(":", 1)[0]
+        for suffix in ("-floor", "-pad"):
+            if pid.endswith(suffix) and pid[:-len(suffix)] in feature_ids:
+                pid = pid[:-len(suffix)]
+        return pid if pid in feature_ids else None
+
+    out = []
+    for p in normalized_parts(scene):
+        mat = doc.material_by_id(p.material)
+        bb = p.solid.bounding_box()
+        out.append({
+            "id": p.id,
+            "label": part_label(p, mat),
+            "featureId": feature_of(p.id),
+            "material": p.material,
+            "slot": mat.slot if mat else None,
+            "sizeMm": [round(bb[3] - bb[0], 2), round(bb[4] - bb[1], 2),
+                       round(bb[5] - bb[2], 3)],
+            "zMm": [round(bb[2], 3), round(bb[5], 3)],
+        })
+    return out
+
+
 def _report_json(report):
     return {
         "score": report.score,
@@ -153,6 +186,7 @@ def api_compile(body: dict):
             "featureCount": len(trace.records),
             "threeMfBytes": len(threemf),
         },
+        "parts": _parts_json(scene, doc),
         "materials": [
             {"id": m.id, "name": m.name, "color": m.color, "slot": m.slot,
              "role": m.role, "present": m.id in vols,
@@ -191,6 +225,14 @@ def api_export(body: dict):
                 409, "Document has blocking errors; pass ignoreErrors to override",
                 constraints=_issues_json(errors),
                 manufacturing=_report_json(report))
+
+        # Single-format 3MF: return the raw file — no zip wrapper, no report.
+        if formats == ["3mf"]:
+            return Response(
+                content=scene_to_3mf(scene, doc.materials, title=doc.meta.name),
+                media_type="model/3mf",
+                headers={"Content-Disposition":
+                         f'attachment; filename="{doc.meta.id}.3mf"'})
 
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:

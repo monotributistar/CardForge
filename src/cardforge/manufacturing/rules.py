@@ -37,15 +37,20 @@ def check_min_detail(
     nozzle = profile.min_line_width
     if min_width <= 0 or nozzle <= 0:
         return issues
-    what = "stroke" if feature_type in ("text-block", "text-pattern") else "detail"
+    is_text = feature_type in ("text-block", "text-pattern")
+    what = "stroke" if is_text else "detail"
+    fix = ("a thin/serif font's hairlines don't scale with size — use a "
+           "heavier weight or a sans-serif font, or enlarge the text"
+           if is_text else
+           f"make the thinnest part at least {nozzle:.2f}mm "
+           "(enlarge, thicken the stroke, or use a finer nozzle)")
     if min_width < 0.5 * nozzle:
         issues.append(ManufacturingIssue(
             code=IssueCode.MIN_DETAIL, severity=Severity.ERROR,
             message=f"Thinnest {what} {min_width:.2f}mm is far below the "
                     f"{nozzle:.2f}mm nozzle — it will not print",
             node_id=node_id, value=min_width, threshold=nozzle,
-            suggestion=f"Make the thinnest part at least {nozzle:.2f}mm "
-                       "(enlarge, thicken the stroke, or use a finer nozzle)",
+            suggestion=fix.capitalize(),
         ))
     elif min_width < nozzle:
         issues.append(ManufacturingIssue(
@@ -53,7 +58,7 @@ def check_min_detail(
             message=f"Thinnest {what} {min_width:.2f}mm is below the "
                     f"{nozzle:.2f}mm nozzle — detail will be under-extruded",
             node_id=node_id, value=min_width, threshold=nozzle,
-            suggestion=f"Aim for at least {nozzle:.2f}mm of thickness",
+            suggestion=fix.capitalize(),
         ))
     return issues
 

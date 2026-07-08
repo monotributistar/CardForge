@@ -162,13 +162,19 @@ def place(cs: CrossSection, phys_x: float, phys_y: float,
           rotation_deg: float = 0.0, scale: float = 1.0) -> CrossSection:
     """Place a feature-local shape at a physical anchor point.
 
-    Rotation is counter-clockwise around the anchor; scale is uniform.
+    Rotation is counter-clockwise around the SHAPE'S bounding-box center —
+    the same pivot the 2D editor uses — so a rotated feature stays in place
+    instead of swinging around its anchor. Scale is uniform.
     """
     out = cs
     if scale != 1.0:
         out = out.scale((scale, scale))
     if rotation_deg:
-        out = out.rotate(rotation_deg)
+        b = out.bounds()
+        cx, cy = (b[0] + b[2]) / 2, (b[1] + b[3]) / 2
+        out = (out.translate((-cx, -cy))
+                  .rotate(rotation_deg)
+                  .translate((cx, cy)))
     return out.translate((phys_x, phys_y))
 
 

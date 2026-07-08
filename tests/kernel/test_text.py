@@ -43,7 +43,7 @@ def _find_variable_family():
 
     from cardforge.kernel.fonts import font_index
 
-    for face in font_index().values():
+    for face in (f for faces in font_index().values() for f in faces):
         if not face.is_variable:
             continue
         try:
@@ -96,3 +96,40 @@ class TestBlockLayout:
     def test_fallback_family(self):
         r = text_block(["Hi"], "NoSuchFontFamily-XYZ", 4.0)
         assert not r.cross_section.is_empty(), "must fall back to a system font"
+
+
+class TestStaticWeights:
+    def test_best_face_picks_nearest_weight(self):
+        from cardforge.kernel.fonts import FontFace, _best_face
+        faces = [
+            FontFace("r.ttf", -1, "Fam", False, 400.0, False),
+            FontFace("b.ttf", -1, "Fam", False, 700.0, False),
+            FontFace("l.ttf", -1, "Fam", False, 300.0, False),
+            FontFace("i.ttf", -1, "Fam", False, 400.0, True),
+        ]
+        assert _best_face(faces, 700, False).path == "b.ttf"
+        assert _best_face(faces, 800, False).path == "b.ttf"
+        assert _best_face(faces, None, False).path == "r.ttf"
+        assert _best_face(faces, 250, False).path == "l.ttf"
+        assert _best_face(faces, 400, True).path == "i.ttf"
+        # variable face wins outright — any weight is instantiable
+        faces.append(FontFace("v.ttf", -1, "Fam", True, 400.0, False))
+        assert _best_face(faces, 700, False).path == "v.ttf"
+
+    def test_static_family_weight_changes_glyphs(self):
+        """Static families with several weight faces must render differently
+        for weight 300 vs 700 (this was silently ignored before)."""
+        from cardforge.kernel.fonts import font_index
+        family = None
+        for faces in font_index().values():
+            statics = {f.weight for f in faces if not f.is_variable and not f.italic}
+            if (not any(f.is_variable for f in faces)
+                    and min(statics, default=400) <= 350 and max(statics, default=400) >= 700):
+                family = faces[0].family
+                break
+        if not family:
+            import pytest as _pytest
+            _pytest.skip("no static multi-weight family on this system")
+        light = text_block(["H"], family, 10.0, weight=300)
+        bold = text_block(["H"], family, 10.0, weight=700)
+        assert bold.cross_section.area() > light.cross_section.area() * 1.1

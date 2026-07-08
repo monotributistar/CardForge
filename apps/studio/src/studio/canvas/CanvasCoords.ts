@@ -108,5 +108,10 @@ export function getFeatureBoundsMm(feature: Feature, cardW: number, cardH: numbe
           return { x, y, w: feature.width ?? 20, h: feature.height ?? 10 }
       }
     }
+    case 'hole': {
+      if (feature.holeType === 'slot') return { x, y, w: feature.width ?? 14, h: feature.height ?? 5 }
+      const d = feature.diameter ?? 5
+      return { x, y, w: d, h: d }
+    }
   }
 }

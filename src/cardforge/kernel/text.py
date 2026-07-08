@@ -108,14 +108,21 @@ def _shape_line(font: TTFont, hb_font: "hb.Font", text: str) -> Tuple[List[Shape
     return glyphs, x
 
 
-def _make_hb_font(font: TTFont) -> "hb.Font":
-    """Build an hb.Font from the (possibly instantiated) TTFont bytes."""
-    import io
+# hb.Font cache per TTFont identity — load_font returns cached TTFonts, and
+# serializing the font bytes for HarfBuzz costs ~250ms per call otherwise.
+_hb_cache: Dict[int, "hb.Font"] = {}
 
-    buf = io.BytesIO()
-    font.save(buf, reorderTables=False)
-    face = hb.Face(buf.getvalue())
-    return hb.Font(face)
+
+def _make_hb_font(font: TTFont) -> "hb.Font":
+    """Build (once) an hb.Font from the (possibly instantiated) TTFont."""
+    key = id(font)
+    if key not in _hb_cache:
+        import io
+
+        buf = io.BytesIO()
+        font.save(buf, reorderTables=False)
+        _hb_cache[key] = hb.Font(hb.Face(buf.getvalue()))
+    return _hb_cache[key]
 
 
 # glyph-outline cache per TTFont identity: (id(font), glyph) → contours
@@ -152,13 +159,14 @@ def text_block(
     axes: Optional[Dict[str, float]] = None,
     align: str = "left",
     line_height: float = 1.4,
+    italic: bool = False,
 ) -> TextResult:
     """Render a text block to one CrossSection (feature-local, y-up).
 
     Anchor: top-left of the block. The first line's ascent sits at y=0 and
     text extends downward (negative y), matching document semantics.
     """
-    font, _face = load_font(family, weight=weight, axes=axes)
+    font, _face = load_font(family, weight=weight, axes=axes, italic=italic)
     hb_font = _make_hb_font(font)
     upem = font["head"].unitsPerEm
     scale = size_mm / upem

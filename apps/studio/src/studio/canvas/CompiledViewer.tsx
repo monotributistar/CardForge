@@ -3,14 +3,22 @@
 // Fidelity guarantee: no geometry is reimplemented here. The base64 3MF
 // from CompileStore is parsed with three's ThreeMFLoader and displayed
 // with orbit controls, render modes, per-part visibility and explode view.
+// Parts are clickable: picking a mesh selects its feature in the
+// DocumentStore, so the Inspector (right panel) shows it — same flow as
+// the 2D design canvas. The grid is a 10 mm reference resting at y=0 and
+// the model sits on top of it like on the printer bed.
 
 import React, { useRef, useEffect, useState, useCallback } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { ThreeMFLoader } from 'three/examples/jsm/loaders/3MFLoader.js'
 import { useCompileStore } from '../../state/CompileStore'
+import { useDocumentStore, getActiveTab } from '../../state/DocumentStore'
+import type { PartReport } from '../core/CoreClient'
 
 type RenderMode = 'solid' | 'wireframe' | 'solid-edges'
+
+const GRID_MM = 10 // one grid cell = 10 mm
 
 interface PartInfo { name: string; color: string }
 
@@ -36,10 +44,23 @@ export const CompiledViewer: React.FC = () => {
   const model3mfB64 = useCompileStore(s => s.model3mfB64)
   const status = useCompileStore(s => s.status)
   const compileError = useCompileStore(s => s.error)
+  const compiledParts = useCompileStore(s => s.parts)
+  const materials = useCompileStore(s => s.materials)
+
+  const select = useDocumentStore(s => s.select)
+  const selectObject = useDocumentStore(s => s.selectObject)
+  const activeTab = useDocumentStore(getActiveTab)
+  const selectedFeatureId = activeTab?.selectedFeatureId ?? null
+  const objectSelected = activeTab?.objectSelected ?? false
 
   const containerRef = useRef<HTMLDivElement>(null)
   const sceneRef = useRef<SceneRefs | null>(null)
   const animRef = useRef<number>(0)
+  // Live values for the (once-attached) pointer handlers
+  const pickRef = useRef<{ parts: PartReport[]; select: typeof select; selectObject: typeof selectObject }>({
+    parts: [], select, selectObject,
+  })
+  pickRef.current = { parts: compiledParts, select, selectObject }
 
   const [renderMode, setRenderMode] = useState<RenderMode>('solid')
   const [explosion, setExplosion] = useState(0)
@@ -77,11 +98,45 @@ export const CompiledViewer: React.FC = () => {
     dir2.position.set(-1, -0.5, -0.5)
     scene.add(dir2)
 
-    const grid = new THREE.GridHelper(120, 20, '#30363d', '#21262d')
-    grid.position.y = -2
+    // Bed reference: grid at y=0, one cell = GRID_MM millimeters
+    const grid = new THREE.GridHelper(160, 160 / GRID_MM, '#3d444d', '#21262d')
+    grid.position.y = 0
     scene.add(grid)
 
     sceneRef.current = { scene, camera, renderer, controls, model: null, partMeshes: new Map(), fittedOnce: false }
+
+    // ── Click-to-select (click = press+release without dragging) ────
+    const raycaster = new THREE.Raycaster()
+    let downAt: { x: number; y: number } | null = null
+    const onDown = (e: PointerEvent) => { downAt = { x: e.clientX, y: e.clientY } }
+    const onUp = (e: PointerEvent) => {
+      const s = sceneRef.current
+      if (!s || !downAt) return
+      const moved = Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y)
+      downAt = null
+      if (moved > 5) return // it was an orbit drag
+      const rect = renderer.domElement.getBoundingClientRect()
+      const ndc = new THREE.Vector2(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1,
+      )
+      raycaster.setFromCamera(ndc, s.camera)
+      const meshes: THREE.Mesh[] = []
+      s.partMeshes.forEach(list => list.forEach(m => { if (m.visible) meshes.push(m) }))
+      const hits = raycaster.intersectObjects(meshes, false)
+      const { parts: manifest, select: doSelect, selectObject: doSelectObject } = pickRef.current
+      if (!hits.length) return
+      // resolve the part label of the hit mesh (name lives on mesh or ancestor)
+      let node: THREE.Object3D | null = hits[0].object
+      let label = ''
+      while (node && !label) { label = node.name; node = node.parent }
+      const part = manifest.find(p => p.label === label)
+      if (!part) return
+      if (part.featureId) doSelect(part.featureId)
+      else doSelectObject()
+    }
+    renderer.domElement.addEventListener('pointerdown', onDown)
+    renderer.domElement.addEventListener('pointerup', onUp)
 
     const animate = () => {
       animRef.current = requestAnimationFrame(animate)
@@ -102,6 +157,8 @@ export const CompiledViewer: React.FC = () => {
     return () => {
       cancelAnimationFrame(animRef.current)
       obs.disconnect()
+      renderer.domElement.removeEventListener('pointerdown', onDown)
+      renderer.domElement.removeEventListener('pointerup', onUp)
       controls.dispose()
       renderer.dispose()
       if (el.contains(renderer.domElement)) el.removeChild(renderer.domElement)
@@ -155,12 +212,14 @@ export const CompiledViewer: React.FC = () => {
           name = (p && p !== group && p.name) || `part-${++unnamed}`
         }
         obj.userData.baseZ = obj.position.z
+        // Own material instance per mesh so selection highlight stays local
+        obj.material = (Array.isArray(obj.material) ? obj.material[0] : obj.material).clone()
         const existing = s.partMeshes.get(name)
         if (existing) {
           existing.push(obj)
         } else {
           s.partMeshes.set(name, [obj])
-          const mat = (Array.isArray(obj.material) ? obj.material[0] : obj.material) as THREE.MeshPhongMaterial
+          const mat = obj.material as THREE.MeshPhongMaterial
           const color = mat?.color ? `#${mat.color.getHexString()}` : '#8b949e'
           partList.push({ name, color })
         }
@@ -173,10 +232,13 @@ export const CompiledViewer: React.FC = () => {
         obj.add(edges)
       })
 
-      // Center the model at the origin
+      // Rest the model on the bed plane (y=0), centered in x/z — like the
+      // printer plate. z in kernel space is already bed-normalized.
       const box = new THREE.Box3().setFromObject(group)
       const center = box.getCenter(new THREE.Vector3())
-      group.position.sub(center)
+      group.position.x -= center.x
+      group.position.z -= center.z
+      group.position.y -= box.min.y
 
       s.scene.add(group)
       s.model = group
@@ -222,6 +284,30 @@ export const CompiledViewer: React.FC = () => {
     })
   }, [renderMode, hiddenParts, explosion, parts])
 
+  // ── Highlight the selected part (mirrors 2D/tree selection) ───────
+  const selectedLabels = new Set(
+    compiledParts
+      .filter(p => (p.featureId ? p.featureId === selectedFeatureId
+                    : objectSelected && p.id === 'base'))
+      .map(p => p.label),
+  )
+  const selectedKey = [...selectedLabels].sort().join('|')
+  useEffect(() => {
+    const s = sceneRef.current
+    if (!s) return
+    s.partMeshes.forEach((meshes, name) => {
+      const on = selectedLabels.has(name)
+      for (const mesh of meshes) {
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+        for (const m of mats) {
+          const pm = m as THREE.MeshPhongMaterial
+          if (pm.emissive) pm.emissive.setHex(on ? 0x1f4d8f : 0x000000)
+        }
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedKey, parts])
+
   const togglePart = useCallback((name: string) => {
     setHiddenParts(prev => {
       const next = new Set(prev)
@@ -254,6 +340,11 @@ export const CompiledViewer: React.FC = () => {
 
   const cycleMode = () => setRenderMode(m => m === 'solid' ? 'solid-edges' : m === 'solid-edges' ? 'wireframe' : 'solid')
 
+  // Selected part(s) info for the dimensions overlay
+  const selectedParts = compiledParts.filter(p => selectedLabels.has(p.label))
+  const matById = new Map(materials.map(m => [m.id, m]))
+  const fmt = (n: number) => (Math.round(n * 100) / 100).toString()
+
   return (
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative', minHeight: 0 }}>
       {/* Toolbar */}
@@ -271,22 +362,52 @@ export const CompiledViewer: React.FC = () => {
             style={{ width: 70 }}
           />
         </label>
+        <span style={{ fontSize: 10, color: '#484f58', background: '#161b22', border: '1px solid #30363d', borderRadius: 4, padding: '2px 8px' }}>
+          Grid {GRID_MM} mm
+        </span>
       </div>
 
-      {/* Part legend */}
+      {/* Part legend — click a part in the 3D view or here to inspect it */}
       {parts.length > 0 && (
         <div style={{ position: 'absolute', top: 8, right: 8, zIndex: 10, background: '#161b22', border: '1px solid #30363d', borderRadius: 6, padding: 8 }}>
           {parts.map(p => {
             const visible = !hiddenParts.has(p.name)
+            const info = compiledParts.find(cp => cp.label === p.name)
+            const isSel = selectedLabels.has(p.name)
+            const size = info ? `${fmt(info.sizeMm[0])} × ${fmt(info.sizeMm[1])} × ${fmt(info.sizeMm[2])} mm` : ''
             return (
-              <div key={p.name} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 0', cursor: 'pointer' }}
-                onClick={() => togglePart(p.name)}>
-                <span style={{
-                  width: 12, height: 12, borderRadius: 2,
-                  background: visible ? p.color : '#30363d',
-                  border: `1px solid ${p.color}`,
-                }} />
-                <span style={{ fontSize: 11, color: visible ? '#c9d1d9' : '#484f58' }}>{p.name}</span>
+              <div key={p.name}
+                title={size}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 4px', cursor: 'pointer', borderRadius: 4, background: isSel ? 'rgba(88,166,255,0.15)' : 'transparent' }}
+                onClick={() => {
+                  if (info) { if (info.featureId) select(info.featureId); else selectObject() }
+                }}>
+                <span
+                  onClick={e => { e.stopPropagation(); togglePart(p.name) }}
+                  title="Show/hide part"
+                  style={{
+                    width: 12, height: 12, borderRadius: 2,
+                    background: visible ? p.color : '#30363d',
+                    border: `1px solid ${p.color}`,
+                  }} />
+                <span style={{ fontSize: 11, color: isSel ? '#58a6ff' : visible ? '#c9d1d9' : '#484f58' }}>{p.name}</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Selected part dimensions (mm) */}
+      {selectedParts.length > 0 && (
+        <div style={{ position: 'absolute', bottom: 8, right: 8, zIndex: 10, background: '#161b22', border: '1px solid #30363d', borderRadius: 6, padding: '6px 10px', fontSize: 11, color: '#c9d1d9' }}>
+          {selectedParts.map(p => {
+            const mat = matById.get(p.material)
+            return (
+              <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '1px 0' }}>
+                <span style={{ width: 10, height: 10, borderRadius: 2, background: mat?.color ?? '#8b949e', flexShrink: 0 }} />
+                <span style={{ color: '#8b949e' }}>{p.label}</span>
+                <span>{fmt(p.sizeMm[0])} × {fmt(p.sizeMm[1])} × {fmt(p.sizeMm[2])} mm</span>
+                <span style={{ color: '#484f58' }}>z {fmt(p.zMm[0])}–{fmt(p.zMm[1])}</span>
               </div>
             )
           })}

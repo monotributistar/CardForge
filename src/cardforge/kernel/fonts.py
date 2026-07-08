@@ -19,9 +19,15 @@ FONT_DIRS = [
     Path("/Library/Fonts"),
     Path("/System/Library/Fonts"),
     Path("/System/Library/Fonts/Supplemental"),
+    # Linux (containers) — the scan is non-recursive, so list the actual
+    # package dirs rather than /usr/share/fonts.
+    Path("/usr/share/fonts/truetype/dejavu"),
+    Path("/usr/share/fonts/truetype/liberation"),
+    Path("/usr/share/fonts/truetype/noto"),
 ]
 
-FALLBACK_FAMILIES = ["Helvetica Neue", "Arial", "Geneva"]
+FALLBACK_FAMILIES = ["Helvetica Neue", "Arial", "Geneva",
+                     "DejaVu Sans", "Liberation Sans"]
 
 _NAME_FAMILY = 1
 _NAME_TYPO_FAMILY = 16
@@ -37,6 +43,8 @@ class FontFace:
     index: int          # face index inside .ttc collections
     family: str
     is_variable: bool
+    weight: float = 400.0   # OS/2 usWeightClass (static faces)
+    italic: bool = False
 
 
 def _families_of(font: TTFont) -> List[str]:
@@ -50,10 +58,28 @@ def _families_of(font: TTFont) -> List[str]:
     return list(fams)
 
 
+def _face_style(f: TTFont) -> Tuple[float, bool]:
+    """(usWeightClass, italic) of a loaded face — 400/False when unreadable."""
+    weight, italic = 400.0, False
+    try:
+        os2 = f.get("OS/2")
+        if os2:
+            weight = float(os2.usWeightClass or 400)
+            italic = bool(os2.fsSelection & 0x01)
+        elif f.get("head"):
+            italic = bool(f["head"].macStyle & 0x02)
+    except Exception:
+        pass
+    return weight, italic
+
+
 @lru_cache(maxsize=1)
-def font_index() -> Dict[str, FontFace]:
-    """family (lowercased) → FontFace, scanning FONT_DIRS once per process."""
-    index: Dict[str, FontFace] = {}
+def font_index() -> Dict[str, List[FontFace]]:
+    """family (lowercased) → ALL its faces (one per weight/style), scanning
+    FONT_DIRS once per process. Keeping every face is what makes `weight`
+    work for static families (Bold/Light live in separate faces)."""
+    index: Dict[str, List[FontFace]] = {}
+    seen_dirs_family_style: set = set()
     for d in FONT_DIRS:
         if not d.exists():
             continue
@@ -67,13 +93,25 @@ def font_index() -> Dict[str, FontFace]:
                     n_faces = len(TTCollection(str(p), lazy=True).fonts)
                 for i in range(n_faces):
                     f = TTFont(str(p), fontNumber=i if n_faces > 1 else -1, lazy=True)
+                    # Outline tables required — bitmap-only fonts (emoji,
+                    # legacy CJK bitmaps) have no contours to extrude and
+                    # would crash the renderer.
+                    if "glyf" not in f and "CFF " not in f and "CFF2" not in f:
+                        f.close()
+                        continue
                     is_var = "fvar" in f
+                    weight, italic = _face_style(f)
                     for fam in _families_of(f):
                         key = fam.lower()
-                        # First hit wins (assets/fonts first → project overrides)
-                        if key not in index:
-                            index[key] = FontFace(str(p), i if n_faces > 1 else -1,
-                                                  fam, is_var)
+                        # One face per (family, weight, italic): the first
+                        # FONT_DIR hit wins (assets/fonts overrides system).
+                        style_key = (key, weight, italic, is_var)
+                        if style_key in seen_dirs_family_style:
+                            continue
+                        seen_dirs_family_style.add(style_key)
+                        index.setdefault(key, []).append(
+                            FontFace(str(p), i if n_faces > 1 else -1,
+                                     fam, is_var, weight, italic))
                     f.close()
             except (TTLibError, Exception):
                 continue
@@ -87,26 +125,43 @@ def list_families() -> List[dict]:
     entry is {family, variable} so the editor can offer only real, renderable
     fonts and flag the ones with weight/axis support.
     """
-    by_family: Dict[str, bool] = {}
-    for face in font_index().values():
-        if face.family.startswith("."):
+    out = []
+    for faces in font_index().values():
+        fam = faces[0].family
+        if fam.startswith("."):
             continue
-        by_family[face.family] = by_family.get(face.family, False) or face.is_variable
-    return [{"family": fam, "variable": var}
-            for fam, var in sorted(by_family.items(), key=lambda kv: kv[0].lower())]
+        weights = sorted({f.weight for f in faces if not f.is_variable})
+        out.append({"family": fam,
+                    "variable": any(f.is_variable for f in faces),
+                    "weights": weights})
+    return sorted(out, key=lambda e: e["family"].lower())
 
 
-def resolve_family(family: str) -> FontFace:
+def _best_face(faces: List[FontFace], weight: Optional[float],
+               italic: bool) -> FontFace:
+    """Closest face: match italic when possible, then nearest weight.
+    A variable face wins outright — it can be instantiated at any weight."""
+    target = float(weight) if weight is not None else 400.0
+    pool = [f for f in faces if f.italic == italic] or faces
+    variable = [f for f in pool if f.is_variable]
+    if variable:
+        return variable[0]
+    return min(pool, key=lambda f: abs(f.weight - target))
+
+
+def resolve_family(family: str, weight: Optional[float] = None,
+                   italic: bool = False) -> FontFace:
     idx = font_index()
-    face = idx.get(family.lower())
-    if face:
-        return face
-    for fb in FALLBACK_FAMILIES:
-        face = idx.get(fb.lower())
-        if face:
-            return face
-    raise FontNotFoundError(
-        f"Font family '{family}' not found and no fallback available")
+    faces = idx.get(family.lower())
+    if not faces:
+        for fb in FALLBACK_FAMILIES:
+            faces = idx.get(fb.lower())
+            if faces:
+                break
+    if not faces:
+        raise FontNotFoundError(
+            f"Font family '{family}' not found and no fallback available")
+    return _best_face(faces, weight, italic)
 
 
 @lru_cache(maxsize=32)
@@ -123,13 +178,15 @@ def _load_instantiated(path: str, index: int,
 
 
 def load_font(family: str, weight: Optional[float] = None,
-              axes: Optional[Dict[str, float]] = None) -> Tuple[TTFont, FontFace]:
+              axes: Optional[Dict[str, float]] = None,
+              italic: bool = False) -> Tuple[TTFont, FontFace]:
     """Resolve + load + (if variable) instantiate a font.
 
-    `weight` is sugar for axes={"wght": weight}; explicit axes win.
-    Returned TTFont objects are cached — treat them as read-only.
+    Static families: `weight`/`italic` select the closest real face.
+    Variable fonts: `weight` is sugar for axes={"wght": weight}; explicit
+    axes win. Returned TTFont objects are cached — treat them as read-only.
     """
-    face = resolve_family(family)
+    face = resolve_family(family, weight=weight, italic=italic)
     all_axes: Dict[str, float] = {}
     if weight is not None:
         all_axes["wght"] = float(weight)
