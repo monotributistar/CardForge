@@ -1,0 +1,10 @@
+# Shared by both images (Core = root Dockerfile, Studio = apps/studio/Dockerfile),
+# both built from the repo root. Keep `apps/` and `packages/` IN — the Studio
+# build needs them; the Core image only COPYs src/ so it ignores the rest anyway.
+.git
+**/node_modules
+.venv
+**/dist
+*.tsbuildinfo
+exports
+hueforge

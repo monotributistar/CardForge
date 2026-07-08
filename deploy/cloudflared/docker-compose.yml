@@ -1,0 +1,23 @@
+# Standalone tunnel container — intentionally NOT a Coolify app, so redeploying
+# the Studio/Core does not drop the tunnel. Bring up on the box with:
+#   docker compose -f deploy/cloudflared/docker-compose.yml up -d
+#
+# credentials.json (the tunnel secret) is NOT in git — copy it next to this file
+# on the box. See deploy/README.md.
+
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:2026.7.0
+    container_name: cardforge-tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
+    volumes:
+      - ./config.yml:/etc/cloudflared/config.yml:ro
+      - ./credentials.json:/etc/cloudflared/credentials.json:ro
+    networks:
+      - coolify
+
+networks:
+  # Coolify's shared network — lets the tunnel reach `coolify-proxy` (Traefik).
+  coolify:
+    external: true

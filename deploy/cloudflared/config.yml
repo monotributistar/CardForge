@@ -1,0 +1,27 @@
+# CardForge Cloudflare tunnel — runs as a container on the Linux box, on the
+# `coolify` docker network, forwarding public hostnames to Coolify's Traefik
+# (coolify-proxy) which routes by Host header to the right app container.
+#
+# TLS terminates at the Cloudflare edge (proxied CNAMEs); traffic inside the
+# tunnel and to Traefik is plain HTTP — so the box needs no public 80/443 and
+# no Let's Encrypt.
+#
+# Tunnel: cardforge (86d2721e-ac76-4fbd-b301-6cf130c644ba)
+# DNS routes created with:  cloudflared tunnel route dns --overwrite-dns <uuid> <host>
+
+tunnel: 86d2721e-ac76-4fbd-b301-6cf130c644ba
+credentials-file: /etc/cloudflared/credentials.json
+
+ingress:
+  # ── Production (main branch) ──────────────────────────────────────────
+  - hostname: cardforge.minarai.xyz
+    service: http://coolify-proxy:80
+  - hostname: cardforge-core.minarai.xyz
+    service: http://coolify-proxy:80
+  # ── Dev (dev branch) ──────────────────────────────────────────────────
+  - hostname: cardforge-dev.minarai.xyz
+    service: http://coolify-proxy:80
+  - hostname: cardforge-core-dev.minarai.xyz
+    service: http://coolify-proxy:80
+  # Anything else the tunnel receives → 404.
+  - service: http_status:404
