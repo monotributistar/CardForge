@@ -4,14 +4,24 @@ import React, { useEffect } from 'react'
 import { MenuBar } from './components/MenuBar'
 import { TabBar } from './components/TabBar'
 import { EditorLayout } from './components/EditorLayout'
+import { Splash } from './components/Splash'
+import { NewCardWizard } from './components/NewCardWizard'
 import { useDocumentStore, getActiveTab, removeFeatures, restoreSession } from './state/DocumentStore'
+import { useUIStore, splashEnabledAtStartup } from './state/UIStore'
 import { saveActiveTab } from './state/fileio'
 
 const App: React.FC = () => {
-  // Restore the previous session from localStorage, else open a fresh doc
+  const splashOpen = useUIStore(s => s.splashOpen)
+  const wizardOpen = useUIStore(s => s.wizardOpen)
+
+  // Restore the previous session from localStorage. With the splash disabled
+  // and nothing restored, fall back to a fresh doc (pre-splash behaviour);
+  // otherwise the splash IS the empty state.
   useEffect(() => {
     const store = useDocumentStore.getState()
-    if (store.tabs.length === 0 && !restoreSession()) store.newTab()
+    if (store.tabs.length === 0 && !restoreSession() && !splashEnabledAtStartup()) {
+      store.newTab()
+    }
   }, [])
 
   // Keyboard shortcuts:
@@ -86,6 +96,8 @@ const App: React.FC = () => {
       <MenuBar />
       <TabBar />
       <EditorLayout />
+      {splashOpen && <Splash />}
+      {wizardOpen && <NewCardWizard />}
     </div>
   )
 }

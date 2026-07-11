@@ -105,7 +105,7 @@ export const FeatureTree: React.FC = () => {
         <button
           onClick={() => setAddMenuOpen(o => !o)}
           title="Add feature to active face"
-          style={{ background: '#21262d', color: '#58a6ff', border: '1px solid #30363d', borderRadius: 4, width: 20, height: 20, cursor: 'pointer', fontSize: 13, lineHeight: '16px', padding: 0 }}
+          style={{ background: '#21262d', color: '#58a6ff', border: '1px solid #30363d', borderRadius: 4, width: 24, height: 24, cursor: 'pointer', fontSize: 14, lineHeight: '18px', padding: 0 }}
         >+</button>
       </div>
       {addMenuOpen && (
@@ -118,7 +118,7 @@ export const FeatureTree: React.FC = () => {
             <div
               key={a.type}
               onClick={() => addFeature(a.type)}
-              style={{ padding: '5px 8px', cursor: 'pointer', borderRadius: 4, display: 'flex', gap: 8, alignItems: 'center', color: '#c9d1d9' }}
+              style={{ padding: '8px 10px', cursor: 'pointer', borderRadius: 4, display: 'flex', gap: 8, alignItems: 'center', color: '#c9d1d9', fontSize: 13 }}
               onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#21262d' }}
               onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
             >
@@ -135,7 +135,7 @@ export const FeatureTree: React.FC = () => {
         onClick={() => selectObject()}
         title="Edit the base card (outline, thickness, fill)"
         style={{
-          display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px',
+          display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px', minHeight: 30,
           cursor: 'pointer',
           background: tab.objectSelected ? 'rgba(88,166,255,0.15)' : 'transparent',
           borderLeft: tab.objectSelected ? '2px solid #58a6ff' : '2px solid transparent',
@@ -157,7 +157,7 @@ export const FeatureTree: React.FC = () => {
             <div
               onClick={() => setActiveFace(face)}
               style={{
-                padding: '5px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+                padding: '7px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, minHeight: 30,
                 color: isActive ? '#58a6ff' : '#8b949e', fontWeight: isActive ? 600 : 400,
                 background: isActive ? 'rgba(88,166,255,0.06)' : 'transparent',
               }}
@@ -182,7 +182,7 @@ export const FeatureTree: React.FC = () => {
                     else select(f.id)
                   }}
                   style={{
-                    display: 'flex', alignItems: 'center', gap: 6, padding: '3px 8px 3px 14px',
+                    display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px 6px 14px', minHeight: 28,
                     cursor: 'pointer',
                     background: isSel ? 'rgba(88,166,255,0.15)' : 'transparent',
                     borderLeft: isSel ? '2px solid #58a6ff' : '2px solid transparent',

@@ -281,6 +281,16 @@ useDocumentStore.subscribe(state => {
   }, 800)
 })
 
+/** Open a stored document in a tab — or focus its tab if already open.
+ *  Shared by the MenuBar Recent menu and the welcome splash. */
+export function openStoredDocument(id: string): void {
+  const state = useDocumentStore.getState()
+  const existing = state.tabs.find(t => t.doc.meta.id === id)
+  if (existing) { state.setActive(existing.id); return }
+  const doc = loadStoredDocument(id)
+  if (doc) state.newTab(doc)
+}
+
 /** Reopen the previous session's tabs from localStorage. Returns true if at
  * least one document was restored (App then skips the default blank tab). */
 export function restoreSession(): boolean {

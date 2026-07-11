@@ -3,15 +3,17 @@
 import React, { useState, useRef, useEffect } from 'react'
 import {
   useDocumentStore, getActiveTab,
-  listStoredDocuments, loadStoredDocument, deleteStoredDocument, type StoredDocInfo,
+  listStoredDocuments, openStoredDocument, deleteStoredDocument, type StoredDocInfo,
 } from '../state/DocumentStore'
 import { openDocumentViaDialog, saveActiveTab, saveActiveTabAs, exportActiveTab } from '../state/fileio'
+import { useUIStore } from '../state/UIStore'
 
 export const MenuBar: React.FC = () => {
   const tab = useDocumentStore(getActiveTab)
-  const newTab = useDocumentStore(s => s.newTab)
   const undo = useDocumentStore(s => s.undo)
   const redo = useDocumentStore(s => s.redo)
+  const openSplash = useUIStore(s => s.openSplash)
+  const openWizard = useUIStore(s => s.openWizard)
 
   const hasDoc = tab != null
   const canUndo = (tab?.undo.length ?? 0) > 0
@@ -21,10 +23,15 @@ export const MenuBar: React.FC = () => {
     <div style={{
       display: 'flex', alignItems: 'center', gap: 4, padding: '6px 10px',
       background: '#161b22', borderBottom: '1px solid #30363d', flexShrink: 0,
+      overflowX: 'auto',
     }}>
-      <span style={{ fontWeight: 700, fontSize: 13, color: '#58a6ff', marginRight: 10 }}>CardForge Studio</span>
+      <button
+        onClick={openSplash}
+        title="Welcome screen — recents, wizard, support"
+        style={{ fontWeight: 700, fontSize: 13, color: '#58a6ff', marginRight: 10, background: 'transparent', border: 'none', cursor: 'pointer', padding: '4px 2px', whiteSpace: 'nowrap' }}
+      >CardForge Studio</button>
 
-      <MenuBtn onClick={() => newTab()}>New</MenuBtn>
+      <MenuBtn onClick={openWizard} title="New card — guided setup">New</MenuBtn>
       <MenuBtn onClick={() => void openDocumentViaDialog()}>Open</MenuBtn>
       <RecentMenu />
       <MenuBtn disabled={!hasDoc} onClick={() => void saveActiveTab()}>Save</MenuBtn>
@@ -54,8 +61,6 @@ const RecentMenu: React.FC = () => {
   const [open, setOpen] = useState(false)
   const [docs, setDocs] = useState<StoredDocInfo[]>([])
   const ref = useRef<HTMLDivElement>(null)
-  const openTab = useDocumentStore(s => s.newTab)
-  const setActive = useDocumentStore(s => s.setActive)
 
   useEffect(() => {
     if (!open) return
@@ -69,11 +74,7 @@ const RecentMenu: React.FC = () => {
 
   const openStored = (id: string) => {
     setOpen(false)
-    const state = useDocumentStore.getState()
-    const existing = state.tabs.find(t => t.doc.meta.id === id)
-    if (existing) { setActive(existing.id); return }
-    const doc = loadStoredDocument(id)
-    if (doc) openTab(doc)
+    openStoredDocument(id)
   }
 
   return (
@@ -122,9 +123,9 @@ const MenuBtn: React.FC<{
       background: accent ? '#1f6feb' : '#21262d',
       color: disabled ? '#484f58' : accent ? '#fff' : '#c9d1d9',
       border: '1px solid #30363d',
-      padding: '3px 10px', borderRadius: 4,
+      padding: '6px 12px', borderRadius: 5,
       cursor: disabled ? 'default' : 'pointer',
-      fontSize: 12,
+      fontSize: 13,
       opacity: disabled && accent ? 0.5 : 1,
     }}
   >{children}</button>

@@ -18,6 +18,7 @@ const smallInputStyle: React.CSSProperties = {
 export const MaterialPalette: React.FC = () => {
   const tab = useDocumentStore(getActiveTab)
   const applyEdit = useDocumentStore(s => s.applyEdit)
+  const [collapsed, setCollapsed] = useState(false)
   if (!tab) return null
   const doc = tab.doc
 
@@ -65,15 +66,19 @@ export const MaterialPalette: React.FC = () => {
 
   return (
     <div style={{ borderTop: '1px solid #30363d', padding: '8px 10px', flexShrink: 0 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-        <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, color: '#8b949e' }}>Materials</span>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: collapsed ? 0 : 6 }}>
+        <span
+          onClick={() => setCollapsed(c => !c)}
+          title="Collapse / expand"
+          style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, color: '#8b949e', cursor: 'pointer', userSelect: 'none' }}
+        >{collapsed ? '▸' : '▾'} Materials</span>
         <button
           onClick={addMaterial}
           title="Add material"
-          style={{ background: '#21262d', color: '#58a6ff', border: '1px solid #30363d', borderRadius: 4, width: 20, height: 20, cursor: 'pointer', fontSize: 13, lineHeight: '16px', padding: 0 }}
+          style={{ background: '#21262d', color: '#58a6ff', border: '1px solid #30363d', borderRadius: 4, width: 22, height: 22, cursor: 'pointer', fontSize: 13, lineHeight: '16px', padding: 0 }}
         >+</button>
       </div>
-      {doc.materials.map(m => {
+      {!collapsed && doc.materials.map(m => {
         const blockReason = deleteBlockReason(m)
         return (
           <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 0', fontSize: 11, color: '#c9d1d9' }}>
@@ -86,7 +91,7 @@ export const MaterialPalette: React.FC = () => {
               type="number"
               min={1} max={16}
               value={m.slot ?? ''}
-              title="Slot (1-16)"
+              title="Printer filament slot (AMS/CFS), 1-16 — drives the 3MF color mapping"
               onChange={e => {
                 const n = e.target.valueAsNumber
                 if (!Number.isNaN(n)) editMaterial(m.id, x => { x.slot = Math.max(1, Math.min(16, Math.round(n))) })
@@ -95,7 +100,7 @@ export const MaterialPalette: React.FC = () => {
             />
             <select
               value={m.role ?? ''}
-              title="Role"
+              title="Semantic role: base = card body, text/accent/detail = features, support"
               onChange={e => editMaterial(m.id, x => { x.role = e.target.value as Material['role'] })}
               style={{ ...smallInputStyle, width: 58, flexShrink: 0, cursor: 'pointer' }}
             >

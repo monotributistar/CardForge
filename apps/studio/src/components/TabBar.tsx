@@ -18,7 +18,7 @@ export const TabBar: React.FC = () => {
   return (
     <div style={{
       display: 'flex', alignItems: 'stretch', background: '#0d1117',
-      borderBottom: '1px solid #30363d', overflowX: 'auto', flexShrink: 0, minHeight: 32,
+      borderBottom: '1px solid #30363d', overflowX: 'auto', flexShrink: 0, minHeight: 38,
     }}>
       {tabs.map(tab => {
         const isActive = tab.id === activeTabId
@@ -27,8 +27,8 @@ export const TabBar: React.FC = () => {
             key={tab.id}
             onClick={() => setActive(tab.id)}
             style={{
-              display: 'flex', alignItems: 'center', gap: 6, padding: '0 10px',
-              cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap',
+              display: 'flex', alignItems: 'center', gap: 6, padding: '0 12px',
+              cursor: 'pointer', fontSize: 13, whiteSpace: 'nowrap',
               background: isActive ? '#161b22' : 'transparent',
               color: isActive ? '#c9d1d9' : '#8b949e',
               borderRight: '1px solid #21262d',

@@ -1,6 +1,6 @@
 // Document defaults — factory for new documents and features.
 
-import type { DocumentV2, Feature, FaceId } from '../../types/cardforge'
+import type { DocumentV2, Feature, FaceId, Outline, Material, HoleFeature, TextBlockFeature } from '../../types/cardforge'
 
 function uid(prefix: string): string {
   const rand = typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -148,5 +148,87 @@ export function defaultFeature(type: Feature['type'], face: FaceId, materialId =
         holeType: 'circle',
         diameter: 5,
       }
+  }
+}
+
+// ── New-card wizard ────────────────────────────────────────────────────
+
+export interface WizardOptions {
+  name: string
+  outline: Outline
+  thickness: number
+  nozzle: number
+  baseColor: string
+  baseName: string
+  textColor: string
+  textName: string
+  /** Accent material is optional (multicolor palettes only). */
+  accentColor?: string
+  accentName?: string
+  hole: 'none' | 'keyring' | 'lanyard'
+  /** Material lug around the hole (lets it sit on/past the edge). */
+  holeTab: boolean
+  /** Add a starter 6mm name text-block on the front. */
+  sampleText: boolean
+}
+
+/** Build a full v2 document from the wizard's selections. */
+export function buildWizardDocument(o: WizardOptions): DocumentV2 {
+  const now = new Date().toISOString()
+  const W = o.outline.type === 'circle' ? o.outline.diameter : o.outline.width
+  const H = o.outline.type === 'circle' ? o.outline.diameter : o.outline.height
+
+  const materials: Material[] = [
+    { id: 'base', name: o.baseName, color: o.baseColor, slot: 1, role: 'base' },
+    { id: 'text', name: o.textName, color: o.textColor, slot: 2, role: 'text' },
+  ]
+  if (o.accentColor) {
+    materials.push({ id: 'accent', name: o.accentName || 'Accent', color: o.accentColor, slot: 3, role: 'accent' })
+  }
+
+  const front: Feature[] = []
+
+  if (o.hole === 'keyring') {
+    // Circle Ø5 centered on the left edge — with the tab it reads as a
+    // classic keyring ear; without it the constraint layer warns (open notch).
+    const hole: HoleFeature = {
+      id: uid('hole'), type: 'hole', name: 'Keyring hole',
+      transform: { x: o.holeTab ? -2.5 : 2.5, y: H / 2 - 2.5 },
+      material: 'base', relief: { mode: 'cut' },
+      holeType: 'circle', diameter: 5,
+      ...(o.holeTab ? { tab: true, tabMargin: 3 } : {}),
+    }
+    front.push(hole)
+  } else if (o.hole === 'lanyard') {
+    // Slot 14×5 top-center, fully inside — the credential/badge classic.
+    const hole: HoleFeature = {
+      id: uid('hole'), type: 'hole', name: 'Lanyard slot',
+      transform: { x: W / 2 - 7, y: 3 },
+      material: 'base', relief: { mode: 'cut' },
+      holeType: 'slot', width: 14, height: 5,
+      ...(o.holeTab ? { tab: true, tabMargin: 3 } : {}),
+    }
+    front.push(hole)
+  }
+
+  if (o.sampleText) {
+    const text: TextBlockFeature = {
+      id: uid('text-block'), type: 'text-block', name: 'Name',
+      transform: { x: Math.max(6, W * 0.1), y: Math.max(4, H / 2 - 4) },
+      material: 'text', relief: { mode: 'emboss', height: 0.4 },
+      lines: ['Your Name'],
+      font: { family: 'Helvetica Neue', size: 6, weight: 700 },
+      align: 'left',
+    }
+    front.push(text)
+  }
+
+  return {
+    cardforge: '2.0',
+    meta: { id: uid('doc'), name: o.name || 'Untitled Card', created: now, modified: now },
+    object: { outline: o.outline, thickness: o.thickness },
+    manufacturing: { process: 'fdm', nozzle: o.nozzle, layerHeight: 0.2 },
+    materials,
+    faces: { front: { features: front }, back: { features: [] } },
   }
 }

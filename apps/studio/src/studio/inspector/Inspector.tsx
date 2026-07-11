@@ -12,22 +12,10 @@ import { FIELD_DEFS, QR_TYPE_LABELS, type QRType } from '../services/QRFields'
 import { applySvgToFeature, extractSvgPathD } from '../services/SvgImport'
 import { ICON_LIBRARY, ICON_CATEGORY_LABELS, libraryIconSvg, type IconCategory, type LibraryIcon } from '../services/IconLibrary'
 import { listFonts, type FontInfo } from '../core/CoreClient'
-
-// One-time CSS injection: hide the native number spinners (redundant with the
-// stepper's own +/- buttons) and give those buttons hover/active feedback.
-// The app styles inline, so this is the single place that needs a stylesheet.
-if (typeof document !== 'undefined' && !document.getElementById('cf-num-stepper-style')) {
-  const el = document.createElement('style')
-  el.id = 'cf-num-stepper-style'
-  el.textContent =
-    '.cf-num-stepper input[type=number]::-webkit-inner-spin-button,' +
-    '.cf-num-stepper input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}' +
-    '.cf-num-stepper input[type=number]{-moz-appearance:textfield;appearance:textfield}' +
-    '.cf-num-stepper button:hover:not(:disabled){background:#30363d;color:#fff}' +
-    '.cf-num-stepper button:active:not(:disabled){background:#1f6feb;color:#fff}' +
-    '.cf-num-stepper button:disabled{opacity:.4;cursor:default}'
-  document.head.appendChild(el)
-}
+import {
+  Section, Row, inputStyle, ReadOnly, CommitInput, TextInput, TextArea, NumInput,
+  Select, MaterialSelect, ActionBtn,
+} from '../../components/ui'
 
 // Font families the Core can render — fetched once, cached in CoreClient.
 function useFonts(): FontInfo[] {
@@ -117,16 +105,16 @@ const FeatureInspector: React.FC<{ doc: DocumentV2; feature: Feature; selectedId
           </div>
         </Row>
         <Row label="ID"><ReadOnly value={feature.id} /></Row>
-        <Row label="Name">
+        <Row label="Name" hint="Display name — shown in the layers list and exported part names">
           <TextInput value={feature.name ?? ''} placeholder={feature.id}
             onCommit={v => edit(f => { if (v) f.name = v; else delete f.name })} />
         </Row>
-        <Row label="X (mm)"><NumInput value={feature.transform.x} step={0.1} onCommit={v => edit(f => { f.transform.x = v })} /></Row>
-        <Row label="Y (mm)"><NumInput value={feature.transform.y} step={0.1} onCommit={v => edit(f => { f.transform.y = v })} /></Row>
-        <Row label="Rotation"><NumInput value={feature.transform.rotation ?? 0} step={1} onCommit={v => edit(f => { f.transform.rotation = v })} /></Row>
-        <Row label="Material"><MaterialSelect materials={doc.materials} value={feature.material} onCommit={v => edit(f => { f.material = v })} /></Row>
-        <Row label="Z-order"><NumInput value={feature.zOrder ?? 0} step={1} onCommit={v => edit(f => { f.zOrder = v })} /></Row>
-        <Row label="Visible">
+        <Row label="X (mm)" hint="Horizontal position from the card's left edge, in mm"><NumInput value={feature.transform.x} step={0.1} onCommit={v => edit(f => { f.transform.x = v })} /></Row>
+        <Row label="Y (mm)" hint="Vertical position from the card's top edge, in mm"><NumInput value={feature.transform.y} step={0.1} onCommit={v => edit(f => { f.transform.y = v })} /></Row>
+        <Row label="Rotation" hint="Rotation in degrees, clockwise around the feature center"><NumInput value={feature.transform.rotation ?? 0} step={1} onCommit={v => edit(f => { f.transform.rotation = v })} /></Row>
+        <Row label="Material" hint="Which material (filament color) this element prints in"><MaterialSelect materials={doc.materials} value={feature.material} onCommit={v => edit(f => { f.material = v })} /></Row>
+        <Row label="Z-order" hint="Layer priority — the higher feature wins where two overlap"><NumInput value={feature.zOrder ?? 0} step={1} onCommit={v => edit(f => { f.zOrder = v })} /></Row>
+        <Row label="Visible" hint="Hidden features stay in the file but are not compiled">
           <input type="checkbox" checked={feature.visible !== false}
             onChange={e => edit(f => { f.visible = e.target.checked })} />
         </Row>
@@ -166,7 +154,7 @@ const ReliefEditor: React.FC<{ feature: Feature; materials: Material[]; edit: Ed
   const modes = isBack ? BACK_RELIEF_MODES : RELIEF_MODES
   return (
     <Section title="Relief">
-      <Row label="Mode">
+      <Row label="Mode" hint="How it meets the surface: raised, carved, inlaid or cut through">
         <Select value={relief.mode} options={modes.map(m => [m, m])}
           onCommit={v => edit(f => {
             // Rebuild the relief with only the new mode's params — stale
@@ -197,13 +185,13 @@ const ReliefEditor: React.FC<{ feature: Feature; materials: Material[]; edit: Ed
         </div>
       )}
       {relief.mode === 'emboss' && (
-        <Row label="Height (mm)"><NumInput value={relief.height ?? 0.4} step={0.1} onCommit={v => edit(f => { f.relief.height = v })} /></Row>
+        <Row label="Height (mm)" hint="Height in millimeters"><NumInput value={relief.height ?? 0.4} step={0.1} onCommit={v => edit(f => { f.relief.height = v })} /></Row>
       )}
       {(relief.mode === 'deboss' || relief.mode === 'deboss-backed') && (
-        <Row label="Depth (mm)"><NumInput value={relief.depth ?? 0.4} step={0.1} onCommit={v => edit(f => { f.relief.depth = v })} /></Row>
+        <Row label="Depth (mm)" hint="How deep it sinks into the base, in mm"><NumInput value={relief.depth ?? 0.4} step={0.1} onCommit={v => edit(f => { f.relief.depth = v })} /></Row>
       )}
       {relief.mode === 'deboss' && (
-        <Row label="Background">
+        <Row label="Background" hint="Give the cavity floor a contrasting color">
           <MaterialSelect materials={materials.filter(m => m.id !== feature.material)}
             value={''} allowEmpty emptyLabel="None (empty cavity)"
             onCommit={v => edit(f => {
@@ -221,7 +209,7 @@ const ReliefEditor: React.FC<{ feature: Feature; materials: Material[]; edit: Ed
       )}
       {relief.mode === 'deboss-backed' && (
         <>
-          <Row label="Floor material">
+          <Row label="Floor material" hint="Contrasting material at the bottom of the cavity">
             <MaterialSelect materials={materials.filter(m => m.id !== feature.material)}
               value={relief.floorMaterial ?? ''} allowEmpty emptyLabel="None → plain deboss"
               onCommit={v => edit(f => {
@@ -229,7 +217,7 @@ const ReliefEditor: React.FC<{ feature: Feature; materials: Material[]; edit: Ed
                 f.relief = { mode: 'deboss', depth: f.relief.depth ?? 0.4 }
               })} />
           </Row>
-          <Row label="Floor thickness"><NumInput value={relief.floorThickness ?? 0.4} step={0.1} onCommit={v => edit(f => { f.relief.floorThickness = v })} /></Row>
+          <Row label="Floor thickness" hint="Thickness of the colored floor inside the cavity, in mm"><NumInput value={relief.floorThickness ?? 0.4} step={0.1} onCommit={v => edit(f => { f.relief.floorThickness = v })} /></Row>
         </>
       )}
     </Section>
@@ -242,7 +230,7 @@ const BackingEditor: React.FC<{ feature: Feature; materials: Material[]; edit: E
   const mode = feature.backing?.mode ?? 'auto'
   return (
     <Section title="Backing">
-      <Row label="Mode">
+      <Row label="Mode" hint="How it meets the surface: raised, carved, inlaid or cut through">
         <Select value={mode} options={[['auto', 'Auto'], ['on', 'Always on'], ['off', 'Off']]}
           onCommit={v => edit(f => {
             if (v === 'auto') delete f.backing
@@ -251,28 +239,28 @@ const BackingEditor: React.FC<{ feature: Feature; materials: Material[]; edit: E
       </Row>
       {mode !== 'off' && (
         <>
-          <Row label="Shape">
+          <Row label="Shape" hint="Outline shape">
             <Select value={feature.backing?.shape ?? 'rect'} options={[['rect', 'Rectangle'], ['circle', 'Circle']]}
               onCommit={v => edit(f => {
                 if (!f.backing) f.backing = { mode }
                 if (v === 'circle') f.backing.shape = 'circle'; else delete f.backing.shape
               })} />
           </Row>
-          <Row label="Thickness">
+          <Row label="Thickness" hint="Thickness in mm (0 = automatic)">
             <NumInput value={feature.backing?.thickness ?? 0} step={0.1} placeholder="0 = auto"
               onCommit={v => edit(f => {
                 if (!f.backing) f.backing = { mode }
                 if (v > 0) f.backing.thickness = v; else delete f.backing.thickness
               })} />
           </Row>
-          <Row label="Material">
+          <Row label="Material" hint="Which material (filament color) this element prints in">
             <MaterialSelect materials={materials} value={feature.backing?.material ?? ''} allowEmpty emptyLabel="Base (default)"
               onCommit={v => edit(f => {
                 if (!f.backing) f.backing = { mode }
                 if (v) f.backing.material = v; else delete f.backing.material
               })} />
           </Row>
-          <Row label="Padding (mm)">
+          <Row label="Padding (mm)" hint="Extra margin around the feature bounds, in mm">
             <NumInput value={feature.backing?.padding ?? 0} step={0.5} placeholder="QR: quiet zone · resto: 1.5"
               onCommit={v => edit(f => {
                 if (!f.backing) f.backing = { mode }
@@ -298,11 +286,11 @@ const TextBlockEditor: React.FC<{ feature: TextBlockFeature; edit: EditFn }> = (
         <TextArea value={feature.lines.join('\n')} rows={3}
           onCommit={v => edit<TextBlockFeature>(f => { f.lines = v.split('\n') })} />
       </Row>
-      <Row label="Align">
+      <Row label="Align" hint="Text alignment inside the block">
         <Select value={feature.align ?? 'left'} options={[['left', 'Left'], ['center', 'Center'], ['right', 'Right']]}
           onCommit={v => edit<TextBlockFeature>(f => { f.align = v as TextBlockFeature['align'] })} />
       </Row>
-      <Row label="Line height"><NumInput value={feature.lineHeight ?? 1.2} step={0.05} onCommit={v => edit<TextBlockFeature>(f => { f.lineHeight = v })} /></Row>
+      <Row label="Line height" hint="Line spacing as a multiple of the font size"><NumInput value={feature.lineHeight ?? 1.2} step={0.05} onCommit={v => edit<TextBlockFeature>(f => { f.lineHeight = v })} /></Row>
     </Section>
     <FontEditor feature={feature} edit={edit} weight minSize={MIN_TEXT_SIZE_MM} />
   </>
@@ -326,16 +314,16 @@ const FontEditor: React.FC<{ feature: TextBlockFeature | TextPatternFeature; edi
   ]
   return (
   <Section title="Font">
-    <Row label="Family">
+    <Row label="Family" hint="Font family — only fonts the Core can render are listed">
       {fonts.length > 0
         ? <Select value={current} options={options}
             onCommit={v => edit<TextBlockFeature | TextPatternFeature>(f => { f.font.family = v })} />
         : <TextInput value={current}
             onCommit={v => edit<TextBlockFeature | TextPatternFeature>(f => { f.font.family = v })} />}
     </Row>
-    <Row label="Size (mm)"><NumInput value={feature.font.size} step={0.5} min={minSize} onCommit={v => edit<TextBlockFeature | TextPatternFeature>(f => { f.font.size = v })} /></Row>
+    <Row label="Size (mm)" hint="Size in mm. Text has a 6mm floor so strokes stay printable"><NumInput value={feature.font.size} step={0.5} min={minSize} onCommit={v => edit<TextBlockFeature | TextPatternFeature>(f => { f.font.size = v })} /></Row>
     {weight && (
-      <Row label="Weight">
+      <Row label="Weight" hint="Font weight 100–900 — heavier prints more reliably">
         <NumInput value={feature.font.weight ?? 400} step={50} min={100} max={900}
           onCommit={v => edit<TextBlockFeature>(f => { f.font.weight = v })} />
       </Row>
@@ -350,7 +338,7 @@ const FontEditor: React.FC<{ feature: TextBlockFeature | TextPatternFeature; edi
         })()}
       </div>
     )}
-    <Row label="Italic">
+    <Row label="Italic" hint="Slanted style (needs an italic font file)">
       <input type="checkbox" checked={feature.font.italic === true}
         onChange={e => edit<TextBlockFeature | TextPatternFeature>(f => { f.font.italic = e.target.checked })} />
     </Row>
@@ -373,16 +361,16 @@ const FontEditor: React.FC<{ feature: TextBlockFeature | TextPatternFeature; edi
 const TextPatternEditor: React.FC<{ feature: TextPatternFeature; edit: EditFn }> = ({ feature, edit }) => (
   <>
     <Section title="Text pattern">
-      <Row label="Text"><TextInput value={feature.text} onCommit={v => edit<TextPatternFeature>(f => { f.text = v })} /></Row>
-      <Row label="Gap X (mm)"><NumInput value={feature.spacing} step={0.5} min={0.1} onCommit={v => edit<TextPatternFeature>(f => { f.spacing = v })} /></Row>
-      <Row label="Gap Y (mm)">
+      <Row label="Text" hint="Text repeated across the pattern area"><TextInput value={feature.text} onCommit={v => edit<TextPatternFeature>(f => { f.text = v })} /></Row>
+      <Row label="Gap X (mm)" hint="Horizontal gap between repetitions, in mm"><NumInput value={feature.spacing} step={0.5} min={0.1} onCommit={v => edit<TextPatternFeature>(f => { f.spacing = v })} /></Row>
+      <Row label="Gap Y (mm)" hint="Vertical gap between repetitions (empty = same as X)">
         <NumInput value={feature.spacingY ?? feature.spacing} step={0.5} min={0.1}
           onCommit={v => edit<TextPatternFeature>(f => {
             if (v === f.spacing) delete f.spacingY
             else f.spacingY = v
           })} />
       </Row>
-      <Row label="Angle"><NumInput value={feature.angle ?? 0} step={1} onCommit={v => edit<TextPatternFeature>(f => { f.angle = v })} /></Row>
+      <Row label="Angle" hint="Pattern rotation in degrees"><NumInput value={feature.angle ?? 0} step={1} onCommit={v => edit<TextPatternFeature>(f => { f.angle = v })} /></Row>
       <div style={{ fontSize: 10, color: '#484f58', padding: '2px 0' }}>
         Gap = separación entre repeticiones — se mantiene al cambiar el texto.
       </div>
@@ -406,7 +394,7 @@ const PatternEditor: React.FC<{ feature: PatternFeature; edit: EditFn }> = ({ fe
   }
   return (
   <Section title="Pattern">
-    <Row label="Type">
+    <Row label="Type" hint="Kind of element">
       <Select value={feature.patternType} options={[['dots', 'Dots'], ['lines', 'Lines'], ['grid', 'Grid'], ['hex', 'Hex'], ['svg', 'SVG motif']]}
         onCommit={v => edit<PatternFeature>(f => { f.patternType = v as PatternFeature['patternType'] })} />
     </Row>
@@ -415,17 +403,17 @@ const PatternEditor: React.FC<{ feature: PatternFeature; edit: EditFn }> = ({ fe
         <Row label="Library" vertical>
           <IconPicker featureId={feature.id} />
         </Row>
-        <Row label="Upload .svg">
+        <Row label="Upload .svg" hint="Load an SVG file from your computer">
           <input type="file" accept=".svg,image/svg+xml" onChange={handleSvgUpload} style={{ fontSize: 11, color: '#8b949e', maxWidth: 160 }} />
         </Row>
         {feature.svgInline && (
-          <Row label="Motif"><ReadOnly value={`${Object.keys(feature.colorMap ?? {}).length || 1} color(s), ${feature.svgInline.length} chars`} /></Row>
+          <Row label="Motif" hint="SVG artwork repeated as the pattern motif"><ReadOnly value={`${Object.keys(feature.colorMap ?? {}).length || 1} color(s), ${feature.svgInline.length} chars`} /></Row>
         )}
       </>
     )}
     <Row label={feature.patternType === 'svg' ? 'Gap X (mm)' : 'Spacing (mm)'}><NumInput value={feature.spacing} step={0.5} min={0.1} onCommit={v => edit<PatternFeature>(f => { f.spacing = v })} /></Row>
     {feature.patternType === 'svg' && (
-      <Row label="Gap Y (mm)">
+      <Row label="Gap Y (mm)" hint="Vertical gap between repetitions (empty = same as X)">
         <NumInput value={feature.spacingY ?? feature.spacing} step={0.5} min={0.1}
           onCommit={v => edit<PatternFeature>(f => {
             if (v === f.spacing) delete f.spacingY
@@ -434,15 +422,15 @@ const PatternEditor: React.FC<{ feature: PatternFeature; edit: EditFn }> = ({ fe
       </Row>
     )}
     <Row label={feature.patternType === 'svg' ? 'Motif size (mm)' : 'Element size'}><NumInput value={feature.elementSize ?? 1} step={0.1} min={0.1} onCommit={v => edit<PatternFeature>(f => { f.elementSize = v })} /></Row>
-    <Row label="Angle"><NumInput value={feature.angle ?? 0} step={1} onCommit={v => edit<PatternFeature>(f => { f.angle = v })} /></Row>
-    <Row label="Region">
+    <Row label="Angle" hint="Pattern rotation in degrees"><NumInput value={feature.angle ?? 0} step={1} onCommit={v => edit<PatternFeature>(f => { f.angle = v })} /></Row>
+    <Row label="Region" hint="Tile the whole face, or only this box">
       <Select value={feature.region ?? 'bounds'} options={[['face', 'Whole face'], ['bounds', 'Bounds']]}
         onCommit={v => edit<PatternFeature>(f => { f.region = v as PatternFeature['region'] })} />
     </Row>
     {(feature.region ?? 'bounds') === 'bounds' && (
       <>
-        <Row label="Width (mm)"><NumInput value={feature.width ?? 20} step={1} onCommit={v => edit<PatternFeature>(f => { f.width = v })} /></Row>
-        <Row label="Height (mm)"><NumInput value={feature.height ?? 20} step={1} onCommit={v => edit<PatternFeature>(f => { f.height = v })} /></Row>
+        <Row label="Width (mm)" hint="Width in millimeters"><NumInput value={feature.width ?? 20} step={1} onCommit={v => edit<PatternFeature>(f => { f.width = v })} /></Row>
+        <Row label="Height (mm)" hint="Height in millimeters"><NumInput value={feature.height ?? 20} step={1} onCommit={v => edit<PatternFeature>(f => { f.height = v })} /></Row>
       </>
     )}
   </Section>
@@ -456,7 +444,7 @@ const QREditor: React.FC<{ feature: QRFeature; edit: EditFn }> = ({ feature, edi
   const defs = FIELD_DEFS[qrType] ?? []
   return (
     <Section title="QR Code">
-      <Row label="Type">
+      <Row label="Type" hint="Kind of element">
         <Select value={qrType} options={(Object.keys(QR_TYPE_LABELS) as QRType[]).map(t => [t, QR_TYPE_LABELS[t]])}
           onCommit={v => edit<QRFeature>(f => { f.qrType = v as QRFeature['qrType'] })} />
       </Row>
@@ -475,12 +463,12 @@ const QREditor: React.FC<{ feature: QRFeature; edit: EditFn }> = ({ feature, edi
           )}
         </Row>
       ))}
-      <Row label="Size (mm)"><NumInput value={feature.size} step={1} onCommit={v => edit<QRFeature>(f => { f.size = v })} /></Row>
-      <Row label="Error corr.">
+      <Row label="Size (mm)" hint="Size in mm. Text has a 6mm floor so strokes stay printable"><NumInput value={feature.size} step={1} onCommit={v => edit<QRFeature>(f => { f.size = v })} /></Row>
+      <Row label="Error corr." hint="Redundancy level — higher survives damage, adds modules">
         <Select value={feature.errorCorrection ?? 'M'} options={[['L', 'L (7%)'], ['M', 'M (15%)'], ['Q', 'Q (25%)'], ['H', 'H (30%)']]}
           onCommit={v => edit<QRFeature>(f => { f.errorCorrection = v as QRFeature['errorCorrection'] })} />
       </Row>
-      <Row label="Quiet zone"><NumInput value={feature.quietZone ?? 2} step={1} onCommit={v => edit<QRFeature>(f => { f.quietZone = v })} /></Row>
+      <Row label="Quiet zone" hint="Blank margin around the QR — required for scanning, in mm"><NumInput value={feature.quietZone ?? 2} step={1} onCommit={v => edit<QRFeature>(f => { f.quietZone = v })} /></Row>
     </Section>
   )
 }
@@ -539,22 +527,22 @@ const IconEditor: React.FC<{ feature: IconFeature; materials: Material[]; edit: 
   }
   return (
     <Section title="Icon">
-      <Row label="Width (mm)"><NumInput value={feature.width} step={0.5} onCommit={v => edit<IconFeature>(f => { f.width = v })} /></Row>
-      <Row label="Height (mm)">
+      <Row label="Width (mm)" hint="Width in millimeters"><NumInput value={feature.width} step={0.5} onCommit={v => edit<IconFeature>(f => { f.width = v })} /></Row>
+      <Row label="Height (mm)" hint="Height in millimeters">
         <NumInput value={feature.height ?? feature.width} step={0.5} onCommit={v => edit<IconFeature>(f => { f.height = v })} />
       </Row>
       <Row label="Library" vertical>
         <IconPicker featureId={feature.id} />
       </Row>
-      <Row label="SVG asset">
+      <Row label="SVG asset" hint="Reference to an SVG registered in document assets">
         <TextInput value={feature.svgAsset ?? ''} placeholder="asset key"
           onCommit={v => edit<IconFeature>(f => { if (v) { f.svgAsset = v; delete f.svgInline } else delete f.svgAsset })} />
       </Row>
-      <Row label="Upload .svg">
+      <Row label="Upload .svg" hint="Load an SVG file from your computer">
         <input type="file" accept=".svg,image/svg+xml" onChange={handleUpload} style={{ fontSize: 11, color: '#8b949e', maxWidth: 160 }} />
       </Row>
       {feature.svgInline && (
-        <Row label="Inline SVG"><ReadOnly value={`${feature.svgInline.length} chars`} /></Row>
+        <Row label="Inline SVG" hint="SVG stored inside the document"><ReadOnly value={`${feature.svgInline.length} chars`} /></Row>
       )}
       <Row label="Color map" vertical>
         <ColorMapEditor
@@ -586,7 +574,7 @@ const ShapeEditor: React.FC<{ feature: ShapeFeature; edit: EditFn }> = ({ featur
   )
   return (
     <Section title="Shape">
-      <Row label="Type">
+      <Row label="Type" hint="Kind of element">
         <Select value={t} options={SHAPE_TYPES}
           onCommit={v => edit<ShapeFeature>(f => { f.shapeType = v as ShapeFeature['shapeType'] })} />
       </Row>
@@ -621,7 +609,7 @@ const HoleEditor: React.FC<{ feature: HoleFeature; edit: EditFn }> = ({ feature,
         Through-cut across the whole thickness. Enable the tab to add material
         around the hole — that lets it sit on (or past) the card edge.
       </div>
-      <Row label="Type">
+      <Row label="Type" hint="Kind of element">
         <Select value={t} options={[['circle', 'Circle (keyring)'], ['slot', 'Slot (lanyard)']]}
           onCommit={v => edit<HoleFeature>(f => {
             f.holeType = v as HoleFeature['holeType']
@@ -636,26 +624,26 @@ const HoleEditor: React.FC<{ feature: HoleFeature; edit: EditFn }> = ({ feature,
           })} />
       </Row>
       {t === 'circle' && (
-        <Row label="Diameter (mm)">
+        <Row label="Diameter (mm)" hint="Diameter in millimeters">
           <NumInput value={feature.diameter ?? 5} step={0.5} onCommit={v => edit<HoleFeature>(f => { f.diameter = v })} />
         </Row>
       )}
       {t === 'slot' && (
         <>
-          <Row label="Width (mm)">
+          <Row label="Width (mm)" hint="Width in millimeters">
             <NumInput value={feature.width ?? 14} step={0.5} onCommit={v => edit<HoleFeature>(f => { f.width = v })} />
           </Row>
-          <Row label="Height (mm)">
+          <Row label="Height (mm)" hint="Height in millimeters">
             <NumInput value={feature.height ?? 5} step={0.5} onCommit={v => edit<HoleFeature>(f => { f.height = v })} />
           </Row>
         </>
       )}
-      <Row label="Tab (add material)">
+      <Row label="Tab (add material)" hint="Adds a material lug around the hole so it can sit on the edge">
         <input type="checkbox" checked={feature.tab === true}
           onChange={e => edit<HoleFeature>(f => { if (e.target.checked) f.tab = true; else { delete f.tab; delete f.tabMargin } })} />
       </Row>
       {feature.tab && (
-        <Row label="Tab margin (mm)">
+        <Row label="Tab margin (mm)" hint="Ring of material around the hole, in mm">
           <NumInput value={feature.tabMargin ?? 3} step={0.5} onCommit={v => edit<HoleFeature>(f => { f.tabMargin = v })} />
         </Row>
       )}
@@ -689,12 +677,12 @@ const CornerRadiusEditor: React.FC<{ outline: RoundedRect; applyEdit: ApplyEdit 
 
   return (
     <>
-      <Row label="Radius (mm)">
+      <Row label="Radius (mm)" hint="Corner rounding radius, in mm">
         <NumInput value={outline.radius} step={0.5} onCommit={v => applyEdit(d => {
           if (d.object.outline.type === 'rounded-rect') d.object.outline.radius = v
         })} />
       </Row>
-      <Row label="Per-corner">
+      <Row label="Per-corner" hint="Set a different radius on each corner">
         <input type="checkbox" checked={perCorner}
           onChange={e => applyEdit(d => {
             const o = d.object.outline
@@ -733,7 +721,7 @@ const FillEditor: React.FC<{ fill: Fill | undefined; applyEdit: ApplyEdit }> = (
   })
   return (
     <Section title="Fill">
-      <Row label="Mode">
+      <Row label="Mode" hint="How it meets the surface: raised, carved, inlaid or cut through">
         <Select value={mode} options={[['solid', 'Solid'], ['lattice', 'Lattice']]}
           onCommit={v => applyEdit(d => {
             if (v === 'lattice') d.object.fill = { ...LATTICE_DEFAULTS }
@@ -742,13 +730,13 @@ const FillEditor: React.FC<{ fill: Fill | undefined; applyEdit: ApplyEdit }> = (
       </Row>
       {mode === 'lattice' && (
         <>
-          <Row label="Pattern">
+          <Row label="Pattern" hint="Motif used to fill the area">
             <Select value={lat.pattern} options={[['dots', 'Dots'], ['lines', 'Lines'], ['grid', 'Grid'], ['hex', 'Hex']]}
               onCommit={v => editLattice(f => { f.pattern = v as typeof f.pattern })} />
           </Row>
-          <Row label="Spacing (mm)"><NumInput value={lat.spacing} step={0.5} onCommit={v => editLattice(f => { f.spacing = v })} /></Row>
-          <Row label="Line width"><NumInput value={lat.lineWidth ?? 1.2} step={0.1} onCommit={v => editLattice(f => { f.lineWidth = v })} /></Row>
-          <Row label="Border (mm)"><NumInput value={lat.border ?? 2.5} step={0.5} onCommit={v => editLattice(f => { f.border = v })} /></Row>
+          <Row label="Spacing (mm)" hint="Gap between repetitions, in mm"><NumInput value={lat.spacing} step={0.5} onCommit={v => editLattice(f => { f.spacing = v })} /></Row>
+          <Row label="Line width" hint="Lattice strut width, in mm"><NumInput value={lat.lineWidth ?? 1.2} step={0.1} onCommit={v => editLattice(f => { f.lineWidth = v })} /></Row>
+          <Row label="Border (mm)" hint="Solid rim width around the lattice, in mm"><NumInput value={lat.border ?? 2.5} step={0.5} onCommit={v => editLattice(f => { f.border = v })} /></Row>
         </>
       )}
     </Section>
@@ -775,14 +763,14 @@ const ManufacturingEditor: React.FC<{ doc: DocumentV2; applyEdit: ApplyEdit }> =
 
   return (
     <Section title="Manufacturing">
-      <Row label="Nozzle (mm)">
+      <Row label="Nozzle (mm)" hint="Printer nozzle diameter — sets the minimum printable detail">
         <NumInput value={nozzle} step={0.05} onCommit={v => editMfg(m => { m.nozzle = v })} />
       </Row>
-      <Row label="Process">
+      <Row label="Process" hint="Manufacturing process the checks validate against">
         <Select value={process} options={PROCESS_OPTIONS}
           onCommit={v => editMfg(m => { m.process = v as NonNullable<DocumentV2['manufacturing']>['process'] })} />
       </Row>
-      <Row label="Layer height">
+      <Row label="Layer height" hint="Printing layer height, in mm">
         <NumInput value={layerHeight} step={0.02} onCommit={v => editMfg(m => { m.layerHeight = v })} />
       </Row>
       <div style={{ fontSize: 11, color: '#484f58', padding: '2px 0' }}>
@@ -808,14 +796,14 @@ const DocumentInspector: React.FC<{ doc: DocumentV2; applyEdit: ApplyEdit }> = (
   return (
     <div>
       <Section title="Document">
-        <Row label="Name">
+        <Row label="Name" hint="Display name — shown in the layers list and exported part names">
           <TextInput value={doc.meta.name} onCommit={v => applyEdit(d => { d.meta.name = v })} />
         </Row>
         <Row label="ID"><ReadOnly value={doc.meta.id} /></Row>
       </Section>
 
       <Section title="Outline">
-        <Row label="Shape">
+        <Row label="Shape" hint="Outline shape">
           <Select value={outline.type} options={[['rect', 'Rectangle'], ['rounded-rect', 'Rounded rect'], ['circle', 'Circle'], ['path', 'SVG path']]}
             onCommit={v => applyEdit(d => {
               const o = d.object.outline
@@ -828,18 +816,18 @@ const DocumentInspector: React.FC<{ doc: DocumentV2; applyEdit: ApplyEdit }> = (
         </Row>
 
         {outline.type === 'circle' ? (
-          <Row label="Diameter (mm)">
+          <Row label="Diameter (mm)" hint="Diameter in millimeters">
             <NumInput value={outline.diameter} step={1} onCommit={v => applyEdit(d => {
               if (d.object.outline.type === 'circle') d.object.outline.diameter = v
             })} />
           </Row>
         ) : (
           <>
-            <Row label="Width (mm)"><NumInput value={dims.width} step={1} onCommit={v => applyEdit(d => {
+            <Row label="Width (mm)" hint="Width in millimeters"><NumInput value={dims.width} step={1} onCommit={v => applyEdit(d => {
               const o = d.object.outline
               if (o.type !== 'circle') o.width = v
             })} /></Row>
-            <Row label="Height (mm)"><NumInput value={dims.height} step={1} onCommit={v => applyEdit(d => {
+            <Row label="Height (mm)" hint="Height in millimeters"><NumInput value={dims.height} step={1} onCommit={v => applyEdit(d => {
               const o = d.object.outline
               if (o.type !== 'circle') o.height = v
             })} /></Row>
@@ -850,7 +838,7 @@ const DocumentInspector: React.FC<{ doc: DocumentV2; applyEdit: ApplyEdit }> = (
 
         {outline.type === 'path' && (
           <>
-            <Row label="Upload .svg">
+            <Row label="Upload .svg" hint="Load an SVG file from your computer">
               <input type="file" accept=".svg,image/svg+xml" style={{ fontSize: 11, color: '#8b949e', maxWidth: 160 }}
                 onChange={e => {
                   const file = e.target.files?.[0]
@@ -874,7 +862,7 @@ const DocumentInspector: React.FC<{ doc: DocumentV2; applyEdit: ApplyEdit }> = (
       </Section>
 
       <Section title="Base">
-        <Row label="Material">
+        <Row label="Material" hint="Which material (filament color) this element prints in">
           <MaterialSelect
             materials={doc.materials}
             value={baseMaterialId(doc)}
@@ -888,7 +876,7 @@ const DocumentInspector: React.FC<{ doc: DocumentV2; applyEdit: ApplyEdit }> = (
             })}
           />
         </Row>
-        <Row label="Thickness"><NumInput value={doc.object.thickness} step={0.1} onCommit={v => applyEdit(d => { d.object.thickness = v })} /></Row>
+        <Row label="Thickness" hint="Thickness in mm (0 = automatic)"><NumInput value={doc.object.thickness} step={0.1} onCommit={v => applyEdit(d => { d.object.thickness = v })} /></Row>
       </Section>
 
       <FillEditor fill={fill} applyEdit={applyEdit} />
@@ -1016,147 +1004,6 @@ const ColorMapEditor: React.FC<{
   )
 }
 
-// ── Small controls ───────────────────────────────────────────────────
-
-const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
-  <div style={{ marginBottom: 14 }}>
-    <div style={{
-      fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6,
-      color: '#8b949e', borderBottom: '1px solid #21262d', paddingBottom: 4, marginBottom: 8,
-    }}>{title}</div>
-    {children}
-  </div>
-)
-
-const Row: React.FC<{ label: string; vertical?: boolean; children: React.ReactNode }> = ({ label, vertical, children }) => (
-  <div style={{
-    display: 'flex', flexDirection: vertical ? 'column' : 'row',
-    alignItems: vertical ? 'stretch' : 'center', gap: vertical ? 4 : 8, marginBottom: 6,
-  }}>
-    <span style={{ width: vertical ? 'auto' : 88, flexShrink: 0, color: '#8b949e', fontSize: 11 }}>{label}</span>
-    {children}
-  </div>
-)
-
-const inputStyle: React.CSSProperties = {
-  flex: 1, minWidth: 0, width: '100%', background: '#0d1117', color: '#c9d1d9',
-  border: '1px solid #30363d', borderRadius: 4, padding: '3px 6px', fontSize: 12,
-}
-
-const ReadOnly: React.FC<{ value: string }> = ({ value }) => (
-  <span style={{ fontSize: 11, color: '#484f58', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</span>
-)
-
-/** Text input that commits on blur/Enter (avoids clobbering while typing). */
-const CommitInput: React.FC<{
-  value: string
-  placeholder?: string
-  style?: React.CSSProperties
-  onCommit: (v: string) => void
-}> = ({ value, placeholder, style, onCommit }) => {
-  const [local, setLocal] = React.useState(value)
-  React.useEffect(() => setLocal(value), [value])
-  const commit = () => { if (local !== value) onCommit(local) }
-  return (
-    <input
-      style={style ?? inputStyle}
-      value={local}
-      placeholder={placeholder}
-      onChange={e => setLocal(e.target.value)}
-      onBlur={commit}
-      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-    />
-  )
-}
-
-const TextInput: React.FC<{ value: string; placeholder?: string; onCommit: (v: string) => void }> = (props) => (
-  <CommitInput {...props} />
-)
-
-const TextArea: React.FC<{ value: string; rows?: number; placeholder?: string; onCommit: (v: string) => void }> = ({ value, rows, placeholder, onCommit }) => {
-  const [local, setLocal] = React.useState(value)
-  React.useEffect(() => setLocal(value), [value])
-  return (
-    <textarea
-      style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }}
-      rows={rows ?? 3}
-      value={local}
-      placeholder={placeholder}
-      onChange={e => setLocal(e.target.value)}
-      onBlur={() => { if (local !== value) onCommit(local) }}
-    />
-  )
-}
-
-const stepBtnStyle: React.CSSProperties = {
-  width: 26, flexShrink: 0, background: '#21262d', color: '#c9d1d9',
-  border: '1px solid #30363d', cursor: 'pointer', fontSize: 16, lineHeight: 1,
-  padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', userSelect: 'none',
-}
-
-/** Numeric field as a [−][ value ][+] stepper. Buttons nudge by `step`
- *  (respecting min/max); the value stays editable by typing. Used everywhere
- *  a number is edited, so the whole inspector gets the same control. */
-const NumInput: React.FC<{ value: number; step?: number; min?: number; max?: number; placeholder?: string; onCommit: (v: number) => void }> = ({ value, step = 1, min, max, placeholder, onCommit }) => {
-  const clamp = (n: number) => Math.min(max ?? Infinity, Math.max(min ?? -Infinity, n))
-  // Snap to the step's decimal precision so 0.1 + 0.2 doesn't drift to 0.3000004.
-  const decimals = (String(step).split('.')[1] ?? '').length
-  const snap = (n: number) => Number(n.toFixed(decimals))
-  const bump = (dir: 1 | -1) => onCommit(snap(clamp(value + dir * step)))
-  const atMin = min != null && value <= min
-  const atMax = max != null && value >= max
-  return (
-    <div className="cf-num-stepper" style={{ display: 'flex', flex: 1, minWidth: 0, height: 26 }}>
-      <button type="button" title={`−${step}`} aria-label="decrement" disabled={atMin} onClick={() => bump(-1)}
-        style={{ ...stepBtnStyle, borderRadius: '4px 0 0 4px', borderRight: 'none' }}>−</button>
-      <input
-        type="number"
-        style={{ ...inputStyle, flex: 1, width: 'auto', borderRadius: 0, textAlign: 'center', fontSize: 13, fontVariantNumeric: 'tabular-nums' }}
-        value={value}
-        step={step}
-        min={min}
-        max={max}
-        placeholder={placeholder}
-        onChange={e => {
-          const n = e.target.valueAsNumber
-          if (Number.isNaN(n)) return
-          if (min != null && n < min) return
-          if (max != null && n > max) return
-          onCommit(n)
-        }}
-      />
-      <button type="button" title={`+${step}`} aria-label="increment" disabled={atMax} onClick={() => bump(1)}
-        style={{ ...stepBtnStyle, borderRadius: '0 4px 4px 0', borderLeft: 'none' }}>+</button>
-    </div>
-  )
-}
-
-const Select: React.FC<{ value: string; options: Array<[string, string]>; onCommit: (v: string) => void }> = ({ value, options, onCommit }) => (
-  <select value={value} onChange={e => onCommit(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-    {options.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
-  </select>
-)
-
-const MaterialSelect: React.FC<{ materials: Material[]; value: string; allowEmpty?: boolean; emptyLabel?: string; onCommit: (v: string) => void }> = ({ materials, value, allowEmpty, emptyLabel, onCommit }) => (
-  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
-    <span style={{
-      width: 12, height: 12, borderRadius: 2, flexShrink: 0,
-      background: materials.find(m => m.id === value)?.color ?? 'transparent',
-      border: '1px solid #30363d',
-    }} />
-    <select value={value} onChange={e => onCommit(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-      {allowEmpty && <option value="">{emptyLabel ?? '(none)'}</option>}
-      {materials.map(m => <option key={m.id} value={m.id}>{m.name} ({m.id})</option>)}
-    </select>
-  </div>
-)
-
-const ActionBtn: React.FC<{ title: string; onClick: () => void; children: React.ReactNode }> = ({ title, onClick, children }) => (
-  <button title={title} onClick={onClick} style={{
-    background: '#21262d', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: 4,
-    padding: '2px 8px', fontSize: 12, cursor: 'pointer', lineHeight: '16px',
-  }}>{children}</button>
-)
 
 const IconBtn: React.FC<{ title: string; onClick: () => void; children: React.ReactNode }> = ({ title, onClick, children }) => (
   <button title={title} onClick={onClick} style={{
