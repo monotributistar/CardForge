@@ -41,7 +41,7 @@ export function createNewDocument(): DocumentV2 {
             material: 'text',
             relief: { mode: 'emboss', height: 0.4 },
             lines: ['Tu Nombre'],
-            font: { family: 'Helvetica Neue', size: 4.5, weight: 700 },
+            font: { family: 'Helvetica Neue', size: 6, weight: 700 },
             align: 'left',
           },
         ],
@@ -70,7 +70,7 @@ export function createNewDocument(): DocumentV2 {
             material: 'text',
             relief: { mode: 'flush', depth: 0.4 },
             lines: ['example.com'],
-            font: { family: 'Helvetica Neue', size: 3 },
+            font: { family: 'Helvetica Neue', size: 6 },
             align: 'left',
           },
         ],
@@ -97,7 +97,7 @@ export function defaultFeature(type: Feature['type'], face: FaceId, materialId =
       return {
         ...base, type,
         lines: ['New text'],
-        font: { family: 'Helvetica Neue', size: 4 },
+        font: { family: 'Helvetica Neue', size: 6 },
         align: 'left',
       }
     case 'text-pattern':

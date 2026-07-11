@@ -13,6 +13,22 @@ import { applySvgToFeature, extractSvgPathD } from '../services/SvgImport'
 import { ICON_LIBRARY, ICON_CATEGORY_LABELS, libraryIconSvg, type IconCategory, type LibraryIcon } from '../services/IconLibrary'
 import { listFonts, type FontInfo } from '../core/CoreClient'
 
+// One-time CSS injection: hide the native number spinners (redundant with the
+// stepper's own +/- buttons) and give those buttons hover/active feedback.
+// The app styles inline, so this is the single place that needs a stylesheet.
+if (typeof document !== 'undefined' && !document.getElementById('cf-num-stepper-style')) {
+  const el = document.createElement('style')
+  el.id = 'cf-num-stepper-style'
+  el.textContent =
+    '.cf-num-stepper input[type=number]::-webkit-inner-spin-button,' +
+    '.cf-num-stepper input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}' +
+    '.cf-num-stepper input[type=number]{-moz-appearance:textfield;appearance:textfield}' +
+    '.cf-num-stepper button:hover:not(:disabled){background:#30363d;color:#fff}' +
+    '.cf-num-stepper button:active:not(:disabled){background:#1f6feb;color:#fff}' +
+    '.cf-num-stepper button:disabled{opacity:.4;cursor:default}'
+  document.head.appendChild(el)
+}
+
 // Font families the Core can render — fetched once, cached in CoreClient.
 function useFonts(): FontInfo[] {
   const [fonts, setFonts] = React.useState<FontInfo[]>([])
@@ -288,11 +304,16 @@ const TextBlockEditor: React.FC<{ feature: TextBlockFeature; edit: EditFn }> = (
       </Row>
       <Row label="Line height"><NumInput value={feature.lineHeight ?? 1.2} step={0.05} onCommit={v => edit<TextBlockFeature>(f => { f.lineHeight = v })} /></Row>
     </Section>
-    <FontEditor feature={feature} edit={edit} weight />
+    <FontEditor feature={feature} edit={edit} weight minSize={MIN_TEXT_SIZE_MM} />
   </>
 )
 
-const FontEditor: React.FC<{ feature: TextBlockFeature | TextPatternFeature; edit: EditFn; weight?: boolean }> = ({ feature, edit, weight }) => {
+// Manufacturing floor for text-block size: below this the printed strokes fall
+// under the nozzle and the glyphs don't come out. Enforced as the Size field's
+// minimum (and the starter defaults sit at/above it).
+const MIN_TEXT_SIZE_MM = 6
+
+const FontEditor: React.FC<{ feature: TextBlockFeature | TextPatternFeature; edit: EditFn; weight?: boolean; minSize?: number }> = ({ feature, edit, weight, minSize }) => {
   const fonts = useFonts()
   const current = feature.font.family
   const isVariable = fonts.find(f => f.family === current)?.variable ?? false
@@ -312,7 +333,7 @@ const FontEditor: React.FC<{ feature: TextBlockFeature | TextPatternFeature; edi
         : <TextInput value={current}
             onCommit={v => edit<TextBlockFeature | TextPatternFeature>(f => { f.font.family = v })} />}
     </Row>
-    <Row label="Size (mm)"><NumInput value={feature.font.size} step={0.5} onCommit={v => edit<TextBlockFeature | TextPatternFeature>(f => { f.font.size = v })} /></Row>
+    <Row label="Size (mm)"><NumInput value={feature.font.size} step={0.5} min={minSize} onCommit={v => edit<TextBlockFeature | TextPatternFeature>(f => { f.font.size = v })} /></Row>
     {weight && (
       <Row label="Weight">
         <NumInput value={feature.font.weight ?? 400} step={50} min={100} max={900}
@@ -775,6 +796,11 @@ const ManufacturingEditor: React.FC<{ doc: DocumentV2; applyEdit: ApplyEdit }> =
 const outlineDims = (o: Outline): { width: number; height: number } =>
   o.type === 'circle' ? { width: o.diameter, height: o.diameter } : { width: o.width, height: o.height }
 
+// The base material is the one tagged role 'base' (else the first) — same rule
+// the Core uses to pick which material bodies the card.
+const baseMaterialId = (doc: DocumentV2): string =>
+  doc.materials.find(m => m.role === 'base')?.id ?? doc.materials[0]?.id ?? ''
+
 const DocumentInspector: React.FC<{ doc: DocumentV2; applyEdit: ApplyEdit }> = ({ doc, applyEdit }) => {
   const outline = doc.object.outline
   const dims = outlineDims(outline)
@@ -847,7 +873,21 @@ const DocumentInspector: React.FC<{ doc: DocumentV2; applyEdit: ApplyEdit }> = (
         )}
       </Section>
 
-      <Section title="Thickness">
+      <Section title="Base">
+        <Row label="Material">
+          <MaterialSelect
+            materials={doc.materials}
+            value={baseMaterialId(doc)}
+            onCommit={v => applyEdit(d => {
+              // Exactly one material carries the base role: promote the pick,
+              // demote whoever held it (the compiler bodies the card in it).
+              for (const m of d.materials) {
+                if (m.id === v) m.role = 'base'
+                else if (m.role === 'base') delete m.role
+              }
+            })}
+          />
+        </Row>
         <Row label="Thickness"><NumInput value={doc.object.thickness} step={0.1} onCommit={v => applyEdit(d => { d.object.thickness = v })} /></Row>
       </Section>
 
@@ -1048,24 +1088,48 @@ const TextArea: React.FC<{ value: string; rows?: number; placeholder?: string; o
   )
 }
 
-const NumInput: React.FC<{ value: number; step?: number; min?: number; max?: number; placeholder?: string; onCommit: (v: number) => void }> = ({ value, step, min, max, placeholder, onCommit }) => (
-  <input
-    type="number"
-    style={{ ...inputStyle, maxWidth: 90 }}
-    value={value}
-    step={step}
-    min={min}
-    max={max}
-    placeholder={placeholder}
-    onChange={e => {
-      const n = e.target.valueAsNumber
-      if (Number.isNaN(n)) return
-      if (min != null && n < min) return
-      if (max != null && n > max) return
-      onCommit(n)
-    }}
-  />
-)
+const stepBtnStyle: React.CSSProperties = {
+  width: 26, flexShrink: 0, background: '#21262d', color: '#c9d1d9',
+  border: '1px solid #30363d', cursor: 'pointer', fontSize: 16, lineHeight: 1,
+  padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', userSelect: 'none',
+}
+
+/** Numeric field as a [−][ value ][+] stepper. Buttons nudge by `step`
+ *  (respecting min/max); the value stays editable by typing. Used everywhere
+ *  a number is edited, so the whole inspector gets the same control. */
+const NumInput: React.FC<{ value: number; step?: number; min?: number; max?: number; placeholder?: string; onCommit: (v: number) => void }> = ({ value, step = 1, min, max, placeholder, onCommit }) => {
+  const clamp = (n: number) => Math.min(max ?? Infinity, Math.max(min ?? -Infinity, n))
+  // Snap to the step's decimal precision so 0.1 + 0.2 doesn't drift to 0.3000004.
+  const decimals = (String(step).split('.')[1] ?? '').length
+  const snap = (n: number) => Number(n.toFixed(decimals))
+  const bump = (dir: 1 | -1) => onCommit(snap(clamp(value + dir * step)))
+  const atMin = min != null && value <= min
+  const atMax = max != null && value >= max
+  return (
+    <div className="cf-num-stepper" style={{ display: 'flex', flex: 1, minWidth: 0, height: 26 }}>
+      <button type="button" title={`−${step}`} aria-label="decrement" disabled={atMin} onClick={() => bump(-1)}
+        style={{ ...stepBtnStyle, borderRadius: '4px 0 0 4px', borderRight: 'none' }}>−</button>
+      <input
+        type="number"
+        style={{ ...inputStyle, flex: 1, width: 'auto', borderRadius: 0, textAlign: 'center', fontSize: 13, fontVariantNumeric: 'tabular-nums' }}
+        value={value}
+        step={step}
+        min={min}
+        max={max}
+        placeholder={placeholder}
+        onChange={e => {
+          const n = e.target.valueAsNumber
+          if (Number.isNaN(n)) return
+          if (min != null && n < min) return
+          if (max != null && n > max) return
+          onCommit(n)
+        }}
+      />
+      <button type="button" title={`+${step}`} aria-label="increment" disabled={atMax} onClick={() => bump(1)}
+        style={{ ...stepBtnStyle, borderRadius: '0 4px 4px 0', borderLeft: 'none' }}>+</button>
+    </div>
+  )
+}
 
 const Select: React.FC<{ value: string; options: Array<[string, string]>; onCommit: (v: string) => void }> = ({ value, options, onCommit }) => (
   <select value={value} onChange={e => onCommit(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
