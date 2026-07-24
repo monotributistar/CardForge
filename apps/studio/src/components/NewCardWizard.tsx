@@ -7,6 +7,7 @@ import type { Outline } from '../types/cardforge'
 import { useDocumentStore } from '../state/DocumentStore'
 import { useUIStore } from '../state/UIStore'
 import { buildWizardDocument, type WizardOptions } from '../studio/document/defaults'
+import { applySvgOutline, extractSvgFillColors, svgNaturalSize } from '../studio/services/SvgImport'
 import { Overlay, Btn, Row, NumInput, TextInput, Select, useIsNarrow } from './ui'
 
 // ── Presets ──────────────────────────────────────────────────────────
@@ -48,6 +49,12 @@ const PRESETS: Preset[] = [
     thickness: 2.0, hole: 'keyring', holeTab: false,
   },
   {
+    key: 'svg', icon: '🎨', label: 'SVG shape',
+    desc: 'Upload an SVG — its shape becomes the card, its colors print multicolor',
+    outline: { type: 'rounded-rect', width: 80, height: 50, radius: 4 },
+    thickness: 2.0, hole: 'none', holeTab: false,
+  },
+  {
     key: 'custom', icon: '✏️', label: 'Custom',
     desc: 'Start from a blank 85 × 54 card',
     outline: { type: 'rounded-rect', width: 85, height: 54, radius: 4 },
@@ -78,6 +85,8 @@ export const NewCardWizard: React.FC = () => {
   const [hole, setHole] = useState<WizardOptions['hole']>(PRESETS[0].hole)
   const [holeTab, setHoleTab] = useState(PRESETS[0].holeTab)
   const [sampleText, setSampleText] = useState(true)
+  const [svgText, setSvgText] = useState<string | null>(null)
+  const [svgColors, setSvgColors] = useState(0)
 
   const pickPreset = (p: Preset) => {
     setPreset(p)
@@ -85,8 +94,27 @@ export const NewCardWizard: React.FC = () => {
     setThickness(p.thickness)
     setHole(p.hole)
     setHoleTab(p.holeTab)
+    setSvgText(null)
+    setSvgColors(0)
     setName(p.key === 'custom' ? 'My Card' : p.label)
     setStep(1)
+  }
+
+  const loadSvg = (file: File) => {
+    void file.text().then(text => {
+      const colors = extractSvgFillColors(text)
+      if (!colors.length) return
+      setSvgText(text)
+      setSvgColors(colors.length)
+      // Keep the chosen width, derive height from the artwork's aspect
+      setOutline(o => {
+        const w = o.type === 'circle' ? o.diameter : o.width
+        const nat = svgNaturalSize(text)
+        const h = nat ? Math.round(w * (nat.height / nat.width) * 100) / 100
+          : (o.type === 'circle' ? o.diameter : o.height)
+        return { type: 'rect', width: w, height: h }
+      })
+    })
   }
 
   const create = () => {
@@ -96,6 +124,7 @@ export const NewCardWizard: React.FC = () => {
       ...(accentOn ? { accentColor, accentName } : {}),
       hole, holeTab, sampleText,
     })
+    if (svgText) applySvgOutline(doc, svgText, dims.w)
     newTab(doc)
     closeWizard()
   }
@@ -104,8 +133,16 @@ export const NewCardWizard: React.FC = () => {
     ? { w: outline.diameter, h: outline.diameter }
     : { w: outline.width, h: outline.height }
 
-  const setDim = (k: 'w' | 'h', v: number) => setOutline(o =>
-    o.type === 'circle' ? o : { ...o, [k === 'w' ? 'width' : 'height']: v })
+  const setDim = (k: 'w' | 'h', v: number) => setOutline(o => {
+    if (o.type === 'circle') return o
+    if (svgText && k === 'w') {
+      // SVG shape: width drives, height follows the artwork's aspect ratio
+      const nat = svgNaturalSize(svgText)
+      const h = nat ? Math.round(v * (nat.height / nat.width) * 100) / 100 : o.height
+      return { ...o, width: v, height: h }
+    }
+    return { ...o, [k === 'w' ? 'width' : 'height']: v }
+  })
 
   return (
     <Overlay onClose={closeWizard}>
@@ -160,6 +197,19 @@ export const NewCardWizard: React.FC = () => {
             <Row label="Name" hint="Document name — also used for the exported file name">
               <TextInput value={name} onCommit={setName} />
             </Row>
+            {preset.key === 'svg' ? (
+              <>
+                <Row label="SVG file" hint="The artwork's silhouette becomes the card shape; each color prints in its own filament">
+                  <input type="file" accept=".svg,image/svg+xml" style={{ fontSize: 11, color: '#8b949e', maxWidth: 200 }}
+                    onChange={e => { const f = e.target.files?.[0]; if (f) loadSvg(f); e.target.value = '' }} />
+                </Row>
+                {svgText && (
+                  <div style={{ fontSize: 11, color: '#3fb950', padding: '2px 0' }}>
+                    ✓ SVG loaded — {svgColors} color{svgColors === 1 ? '' : 's'} detected (each gets a material)
+                  </div>
+                )}
+              </>
+            ) : (
             <Row label="Shape" hint="Overall outline of the card body">
               <Select
                 value={outline.type === 'circle' ? 'circle' : outline.type}
@@ -172,6 +222,7 @@ export const NewCardWizard: React.FC = () => {
                 })}
               />
             </Row>
+            )}
             {outline.type === 'circle' ? (
               <Row label="Diameter (mm)" hint="Disc diameter in millimeters">
                 <NumInput value={outline.diameter} step={1} min={10}

@@ -7,7 +7,10 @@ export type Outline =
   | { type: 'rect'; width: number; height: number }
   | { type: 'rounded-rect'; width: number; height: number; radius: number; corners?: { tl?: number; tr?: number; br?: number; bl?: number } }
   | { type: 'circle'; diameter: number }
-  | { type: 'path'; svgPath: string; width: number; height: number }
+  // path: svgInline (full SVG markup — preferred) or svgPath (raw `d` data).
+  // colorMap {svg hex → material id} extrudes each color full-thickness in
+  // its own material (multicolor base); unmapped regions print in base.
+  | { type: 'path'; svgPath: string; svgInline?: string; colorMap?: Record<string, string>; width: number; height: number }
 
 export type Fill =
   | { type: 'solid' }

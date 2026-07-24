@@ -528,6 +528,22 @@ const ObjectOutline: React.FC<{ outline: Outline; fill: Fill | undefined; select
     )
   }
   if (outline.type === 'path') {
+    if (outline.svgInline) {
+      // Full-markup outline: show the actual artwork (its colors preview the
+      // multicolor base), stretched to the document's width×height exactly
+      // like the kernel scales it.
+      return (
+        <g>
+          <rect x={0} y={0} width={outline.width} height={outline.height} fill="none" stroke={stroke} strokeWidth={strokeWidth} strokeDasharray="1 1" />
+          <image
+            href={`data:image/svg+xml,${encodeURIComponent(outline.svgInline)}`}
+            x={0} y={0} width={outline.width} height={outline.height}
+            preserveAspectRatio="none"
+          />
+          {isLattice && <rect x={0} y={0} width={outline.width} height={outline.height} fill={hint} stroke="none" />}
+        </g>
+      )
+    }
     return (
       <g>
         <rect x={0} y={0} width={outline.width} height={outline.height} fill="none" stroke="#30363d" strokeWidth={0.15} strokeDasharray="1 1" />

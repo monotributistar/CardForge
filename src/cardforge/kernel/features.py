@@ -51,6 +51,15 @@ def _phys_bounds_to_doc(cs: CrossSection, obj_h: float) -> Bounds:
     return Bounds(min_x, obj_h - max_y, max_x - min_x, max_y - min_y)
 
 
+def _outline_svg_shapes(doc: DocumentV2) -> Dict[str, CrossSection]:
+    """Per-color shapes of an svgInline outline, feature-local (y ∈ [-H, 0])."""
+    o = doc.object.outline
+    try:
+        return svg_to_color_shapes(o.svg_inline, o.width, o.height)
+    except SVGParseError as e:
+        raise ValueError(f"outline SVG cannot be parsed: {e}") from e
+
+
 def outline_cross_section(doc: DocumentV2) -> CrossSection:
     """Object outline in physical space: x ∈ [0,W], y ∈ [0,H]."""
     o = doc.object.outline
@@ -66,10 +75,36 @@ def outline_cross_section(doc: DocumentV2) -> CrossSection:
     elif o.type == "circle":
         local = s2.circle(o.diameter or o.width)
     elif o.type == "path":
-        local = s2.svg_path(o.svg_path, o.width, o.height)
+        if o.svg_inline:
+            # Full SVG markup: the outline is the union of every colored
+            # shape (the artwork's silhouette).
+            local = CrossSection()
+            for cs in _outline_svg_shapes(doc).values():
+                local = local + cs
+            if local.is_empty():
+                raise ValueError("outline SVG has no fillable shapes")
+        else:
+            local = s2.svg_path(o.svg_path, o.width, o.height)
     else:
         raise ValueError(f"unknown outline type: {o.type}")
     return local.translate((0, o.height))
+
+
+def outline_color_regions(doc: DocumentV2) -> List[Tuple[str, CrossSection]]:
+    """Multicolor outline: [(material_id, region)] in PHYSICAL space for every
+    SVG color mapped to a NON-base material via outline.colorMap. Regions not
+    covered (or mapped to base) stay base material. Empty list when the
+    outline isn't a multicolor SVG."""
+    o = doc.object.outline
+    if o.type != "path" or not o.svg_inline or not o.color_map:
+        return []
+    base_id = doc.base_material.id
+    out: List[Tuple[str, CrossSection]] = []
+    for color, cs in sorted(_outline_svg_shapes(doc).items()):
+        mat = o.color_map.get(color)
+        if mat and mat != base_id:
+            out.append((mat, cs.translate((0, o.height))))
+    return out
 
 
 def build_feature_shapes(doc: DocumentV2, face_id: str, feature: Feature,

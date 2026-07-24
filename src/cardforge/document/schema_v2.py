@@ -60,7 +60,10 @@ class Outline:
     rounded-rect: uniform `radius`, or per-corner `corners` {tl,tr,br,bl}
     (missing corners fall back to `radius`).
     circle: `diameter` (width/height are derived == diameter).
-    path: `svg_path` in mm units.
+    path: `svg_inline` (full SVG markup — preferred: transforms, all shape
+    elements, and multicolor supported) or `svg_path` (a raw `d` string).
+    With svg_inline, `color_map` {svg hex → material id} extrudes each fill
+    color full-thickness in its own material; unmapped regions stay base.
     """
 
     type: str
@@ -70,6 +73,8 @@ class Outline:
     corners: Optional[Dict[str, float]] = None
     diameter: float = 0.0
     svg_path: str = ""
+    svg_inline: str = ""
+    color_map: Dict[str, str] = field(default_factory=dict)
 
     def corner_radii(self) -> Dict[str, float]:
         """Effective per-corner radii, filling from `radius` where unset."""
@@ -272,6 +277,8 @@ class DocumentV2:
             corners=dict(ol["corners"]) if ol.get("corners") else None,
             diameter=diameter,
             svg_path=ol.get("svgPath", ""),
+            svg_inline=ol.get("svgInline", ""),
+            color_map=dict(ol.get("colorMap", {})),
         )
         fd = o.get("fill") or {"type": "solid"}
         fill = Fill(
@@ -395,6 +402,11 @@ def validate_v2(data: Dict[str, Any]) -> None:
     if not errors:
         # Referential integrity: every material reference must exist
         mat_ids = {m["id"] for m in data.get("materials", [])}
+        ol = data.get("object", {}).get("outline", {})
+        for svg_hex, mat in ol.get("colorMap", {}).items():
+            if mat not in mat_ids:
+                errors.append(
+                    f"object/outline: colorMap {svg_hex} → unknown material '{mat}'")
         for face_id, face in data.get("faces", {}).items():
             for feat in face.get("features", []):
                 fid = feat.get("id", "?")
@@ -445,7 +457,12 @@ def _outline_to_dict(o: Outline) -> Dict[str, Any]:
         if o.corners:
             d["corners"] = dict(o.corners)
     if o.type == "path":
-        d["svgPath"] = o.svg_path
+        if o.svg_path:
+            d["svgPath"] = o.svg_path
+        if o.svg_inline:
+            d["svgInline"] = o.svg_inline
+        if o.color_map:
+            d["colorMap"] = dict(o.color_map)
     return d
 
 

@@ -26,7 +26,9 @@ from manifold3d import CrossSection, Manifold
 
 from cardforge.document.schema_v2 import DocumentV2
 from cardforge.kernel.base import base_region, is_lattice
-from cardforge.kernel.features import build_feature_shapes, outline_cross_section
+from cardforge.kernel.features import (build_feature_shapes,
+                                       outline_color_regions,
+                                       outline_cross_section)
 from cardforge.kernel.patterns import PatternDensityError
 from cardforge.kernel import shapes2d as s2
 from cardforge.kernel.types import Bounds, CompiledScene, CompileTrace, ScenePart
@@ -378,7 +380,19 @@ def compile_document(doc: DocumentV2, asset_root: Path | str = ".") -> Tuple[Com
         part_solids = {pid: (mat, solid - cutter)
                        for pid, (mat, solid) in part_solids.items()}
 
-    parts: List[ScenePart] = [ScenePart("base", base_mat, base, "base")]
+    # ── Multicolor SVG outline: split the (already carved and cut) base
+    # into full-thickness per-material columns. Splitting LAST means every
+    # cavity, cut, and lattice op above applied once to the whole body —
+    # the color regions only partition what is left.
+    parts: List[ScenePart] = []
+    for mat, region in outline_color_regions(doc):
+        prism = _extrude_at(region, 4 * T + 2.0, -(2 * T + 1.0))
+        piece = base ^ prism
+        if piece.is_empty():
+            continue
+        base = base - prism
+        parts.append(ScenePart(f"base:{mat}", mat, piece, f"base ({mat})"))
+    parts.insert(0, ScenePart("base", base_mat, base, "base"))
     parts += [ScenePart(pid, *part_solids[pid], name=part_names.get(pid, pid))
               for pid in part_order]
 

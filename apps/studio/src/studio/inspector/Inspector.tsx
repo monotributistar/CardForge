@@ -9,7 +9,7 @@ import type {
 } from '../../types/cardforge'
 import { useDocumentStore, getActiveTab, findFeature, removeFeatures } from '../../state/DocumentStore'
 import { FIELD_DEFS, QR_TYPE_LABELS, type QRType } from '../services/QRFields'
-import { applySvgToFeature, extractSvgPathD } from '../services/SvgImport'
+import { applySvgOutline, applySvgToFeature } from '../services/SvgImport'
 import { ICON_LIBRARY, ICON_CATEGORY_LABELS, libraryIconSvg, type IconCategory, type LibraryIcon } from '../services/IconLibrary'
 import { listFonts, type FontInfo } from '../core/CoreClient'
 import {
@@ -838,25 +838,42 @@ const DocumentInspector: React.FC<{ doc: DocumentV2; applyEdit: ApplyEdit }> = (
 
         {outline.type === 'path' && (
           <>
-            <Row label="Upload .svg" hint="Load an SVG file from your computer">
+            <Row label="Upload .svg" hint="Use an SVG file as the card shape — its colors extrude in their own materials">
               <input type="file" accept=".svg,image/svg+xml" style={{ fontSize: 11, color: '#8b949e', maxWidth: 160 }}
                 onChange={e => {
                   const file = e.target.files?.[0]
                   if (!file) return
                   void file.text().then(text => {
-                    const dPath = extractSvgPathD(text)
-                    if (dPath) applyEdit(d => {
-                      if (d.object.outline.type === 'path') d.object.outline.svgPath = dPath
-                    })
+                    applyEdit(d => { applySvgOutline(d, text) })
                   })
                   e.target.value = ''
                 }} />
             </Row>
-            <Row label="SVG path" vertical>
-              <TextArea value={outline.svgPath} rows={3} onCommit={v => applyEdit(d => {
-                if (d.object.outline.type === 'path') d.object.outline.svgPath = v
-              })} />
-            </Row>
+            {outline.svgInline ? (
+              <>
+                <Row label="SVG" hint="SVG artwork stored inside the document">
+                  <ReadOnly value={`${Object.keys(outline.colorMap ?? {}).length || 1} color(s), ${outline.svgInline.length} chars`} />
+                </Row>
+                <Row label="Color map" hint="Each SVG color extrudes full-thickness in its material" vertical>
+                  <ColorMapEditor
+                    value={outline.colorMap ?? {}}
+                    materials={doc.materials}
+                    onCommit={map => applyEdit(d => {
+                      const o = d.object.outline
+                      if (o.type !== 'path') return
+                      if (Object.keys(map).length) o.colorMap = map
+                      else delete o.colorMap
+                    })}
+                  />
+                </Row>
+              </>
+            ) : (
+              <Row label="SVG path" vertical>
+                <TextArea value={outline.svgPath} rows={3} onCommit={v => applyEdit(d => {
+                  if (d.object.outline.type === 'path') d.object.outline.svgPath = v
+                })} />
+              </Row>
+            )}
           </>
         )}
       </Section>

@@ -5,7 +5,7 @@
 
 import type { DocumentV2, Feature, Material } from '../../types/cardforge'
 
-const SHAPE_SELECTOR = 'path, rect, circle, ellipse, polygon, polyline'
+const SHAPE_SELECTOR = 'path, rect, circle, ellipse, polygon, polyline, line'
 
 let _ctx: CanvasRenderingContext2D | null = null
 
@@ -25,28 +25,62 @@ export function normalizeColor(c: string): string | null {
   return `#${hex(m[1])}${hex(m[2])}${hex(m[3])}`
 }
 
-function fillOf(el: Element): string | null {
+function paintOf(el: Element, prop: 'fill' | 'stroke'): string | null {
   const style = el.getAttribute('style')
-  const styleFill = style?.match(/fill\s*:\s*([^;]+)/)?.[1]?.trim()
-  const fill = styleFill
-    ?? el.getAttribute('fill')
-    ?? el.closest('[fill]')?.getAttribute('fill')
+  const styleVal = style?.match(new RegExp(`${prop}\\s*:\\s*([^;]+)`))?.[1]?.trim()
+  const val = styleVal
+    ?? el.getAttribute(prop)
+    ?? el.closest(`[${prop}]`)?.getAttribute(prop)
     ?? null
-  if (!fill || fill === 'none') return null
-  return normalizeColor(fill)
+  // SVG spec default: fill is black when unspecified, stroke is none.
+  if (val === null) return prop === 'fill' ? '#000000' : null
+  if (val === 'none') return null
+  // currentColor resolves to black in the kernel (no CSS cascade there)
+  if (val === 'currentColor') return '#000000'
+  return normalizeColor(val)
 }
 
-/** Distinct fill colors of an SVG in document order (#rrggbb, lowercase). */
+/** Distinct colors of an SVG in document order (#rrggbb, lowercase).
+ * Mirrors the kernel (svg.py): missing fill defaults to black, `none` is
+ * skipped, and stroked shapes contribute their stroke color too. */
 export function extractSvgFillColors(svgText: string): string[] {
   const dom = new DOMParser().parseFromString(svgText, 'image/svg+xml')
   if (dom.querySelector('parsererror')) return []
   const out: string[] = []
   const seen = new Set<string>()
-  dom.querySelectorAll(SHAPE_SELECTOR).forEach(el => {
-    const hex = fillOf(el)
+  const add = (hex: string | null) => {
     if (hex && !seen.has(hex)) { seen.add(hex); out.push(hex) }
+  }
+  dom.querySelectorAll(SHAPE_SELECTOR).forEach(el => {
+    add(paintOf(el, 'fill'))
+    add(paintOf(el, 'stroke'))
   })
   return out
+}
+
+/** Natural width/height of an SVG: viewBox, else width/height attributes,
+ * else the rendered bounding box (hidden off-screen measurement). */
+export function svgNaturalSize(svgText: string): { width: number; height: number } | null {
+  const dom = new DOMParser().parseFromString(svgText, 'image/svg+xml')
+  const root = dom.querySelector('svg')
+  if (!root || dom.querySelector('parsererror')) return null
+  const vb = root.getAttribute('viewBox')?.trim().split(/[\s,]+/).map(Number)
+  if (vb?.length === 4 && vb[2] > 0 && vb[3] > 0) return { width: vb[2], height: vb[3] }
+  const w = parseFloat(root.getAttribute('width') ?? '')
+  const h = parseFloat(root.getAttribute('height') ?? '')
+  if (w > 0 && h > 0) return { width: w, height: h }
+  // Last resort: mount off-screen and measure the artwork's bbox
+  const holder = document.createElement('div')
+  holder.style.cssText = 'position:absolute;left:-9999px;top:-9999px;visibility:hidden'
+  holder.innerHTML = svgText
+  document.body.appendChild(holder)
+  try {
+    const box = (holder.querySelector('svg') as SVGSVGElement | null)?.getBBox()
+    if (box && box.width > 0 && box.height > 0) return { width: box.width, height: box.height }
+  } catch { /* detached/foreign SVG — fall through */ } finally {
+    holder.remove()
+  }
+  return null
 }
 
 /** Concatenated `d` data of every <path> — for `path` outlines. */
@@ -89,6 +123,34 @@ export function ensureMaterialsForColors(doc: DocumentV2, colors: string[]): Rec
   }
   return map
 }
+
+/** Use an SVG file as the card's outline (main shape): stores the full
+ * markup (the kernel resolves transforms and every shape element), keeps the
+ * artwork's aspect ratio, and maps every color to a material so the base
+ * extrudes multicolor. Mutates `doc` — use inside applyEdit or on a freshly
+ * built document. Returns the number of colors found (0 = parse failure). */
+export function applySvgOutline(doc: DocumentV2, svgText: string, targetWidth?: number): number {
+  const colors = extractSvgFillColors(svgText)
+  if (!colors.length) return 0
+  const prev = doc.object.outline
+  const width = targetWidth
+    ?? (prev.type === 'circle' ? prev.diameter : prev.width)
+    ?? 85
+  const nat = svgNaturalSize(svgText)
+  const height = nat ? width * (nat.height / nat.width)
+    : (prev.type === 'circle' ? prev.diameter : prev.height) ?? 54
+  doc.object.outline = {
+    type: 'path',
+    svgPath: extractSvgPathD(svgText), // 2D-canvas fallback only
+    svgInline: svgText,
+    colorMap: ensureMaterialsForColors(doc, colors),
+    width: round2(width),
+    height: round2(height),
+  }
+  return colors.length
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100
 
 /** Set an SVG on a feature (icon or svg-pattern): stores it inline and maps
  * every fill color to a material, creating materials as needed. Use inside

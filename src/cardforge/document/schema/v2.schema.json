@@ -107,11 +107,17 @@
         },
         {
           "type": "object",
-          "required": ["type", "svgPath", "width", "height"],
+          "required": ["type", "width", "height"],
           "additionalProperties": false,
+          "anyOf": [
+            { "required": ["svgPath"], "properties": { "svgPath": { "minLength": 1 } } },
+            { "required": ["svgInline"], "properties": { "svgInline": { "minLength": 1 } } }
+          ],
           "properties": {
             "type": { "const": "path" },
-            "svgPath": { "type": "string", "minLength": 1 },
+            "svgPath": { "type": "string" },
+            "svgInline": { "type": "string" },
+            "colorMap": { "type": "object", "additionalProperties": { "type": "string" } },
             "width": { "type": "number", "exclusiveMinimum": 0 },
             "height": { "type": "number", "exclusiveMinimum": 0 }
           }
