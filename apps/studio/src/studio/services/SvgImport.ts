@@ -124,12 +124,35 @@ export function ensureMaterialsForColors(doc: DocumentV2, colors: string[]): Rec
   return map
 }
 
+/** Default depth of the multicolor layer on a freshly imported SVG shape:
+ * three 0.2mm layers — enough for the color to read, cheap in filament, and
+ * it leaves the rest of the body (and the other face) in base material. */
+export const DEFAULT_COLOR_DEPTH = 0.6
+
+/** The color layer has to stay inside the body — the Core rejects a depth at
+ * or past the thickness (that IS the through-column case). Returns undefined
+ * for "through", which is how the absence of colorDepth reads. */
+export function clampColorDepth(depth: number | undefined, thickness: number): number | undefined {
+  if (!depth || depth <= 0) return undefined
+  return round2(Math.min(depth, thickness / 2))
+}
+
+export interface ColorLayerOptions {
+  /** Depth of the color layer in mm; 0/undefined = colors run through. */
+  colorDepth?: number
+  colorFace?: 'front' | 'back' | 'both'
+}
+
 /** Use an SVG file as the card's outline (main shape): stores the full
  * markup (the kernel resolves transforms and every shape element), keeps the
  * artwork's aspect ratio, and maps every color to a material so the base
- * extrudes multicolor. Mutates `doc` — use inside applyEdit or on a freshly
- * built document. Returns the number of colors found (0 = parse failure). */
-export function applySvgOutline(doc: DocumentV2, svgText: string, targetWidth?: number): number {
+ * extrudes multicolor. By default the colors are a DEFAULT_COLOR_DEPTH layer
+ * on the front, so the back stays a clean base-material canvas; re-importing
+ * over an existing SVG shape keeps whatever layer settings it had.
+ * Mutates `doc` — use inside applyEdit or on a freshly built document.
+ * Returns the number of colors found (0 = parse failure). */
+export function applySvgOutline(doc: DocumentV2, svgText: string, targetWidth?: number,
+                                opts: ColorLayerOptions = {}): number {
   const colors = extractSvgFillColors(svgText)
   if (!colors.length) return 0
   const prev = doc.object.outline
@@ -139,11 +162,16 @@ export function applySvgOutline(doc: DocumentV2, svgText: string, targetWidth?: 
   const nat = svgNaturalSize(svgText)
   const height = nat ? width * (nat.height / nat.width)
     : (prev.type === 'circle' ? prev.diameter : prev.height) ?? 54
+  const keep = prev.type === 'path' && prev.svgInline
+  const depth = opts.colorDepth ?? (keep ? prev.colorDepth : DEFAULT_COLOR_DEPTH)
+  const colorDepth = clampColorDepth(depth, doc.object.thickness)
+  const colorFace = opts.colorFace ?? (keep ? prev.colorFace : undefined) ?? 'front'
   doc.object.outline = {
     type: 'path',
     svgPath: extractSvgPathD(svgText), // 2D-canvas fallback only
     svgInline: svgText,
     colorMap: ensureMaterialsForColors(doc, colors),
+    ...(colorDepth ? { colorDepth, ...(colorFace !== 'front' ? { colorFace } : {}) } : {}),
     width: round2(width),
     height: round2(height),
   }

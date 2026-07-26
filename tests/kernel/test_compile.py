@@ -641,3 +641,111 @@ class TestHole:
         issues = check_constraints(doc, trace)
         assert not any(i.code == "outside-bounds" for i in issues), \
             "a tabbed hole outside the outline must not raise outside-bounds"
+
+
+class TestPocket:
+    """pocket feature — a blind cylindrical cavity sized to hold an insert
+    (magnet, RFID tag). The bore cut is the insert's nominal size opened up by
+    the stated clearances; `ceiling` decides whether it opens at the surface
+    or is sealed under a printed lid."""
+
+    PT = 4.0  # thick enough to actually bury a Ø6×2 magnet
+
+    @staticmethod
+    def pocket(fid="p", x=20.0, y=15.0, diameter=6.0, depth=2.0, **kw):
+        f = {"id": fid, "type": "pocket", "pocketType": "circle",
+             "diameter": diameter, "depth": depth,
+             "transform": {"x": x, "y": y}, "material": "base",
+             "relief": {"mode": "cut"}}
+        f.update(kw)
+        return f
+
+    def bore_volume(self, diameter, depth):
+        return math.pi * (diameter / 2) ** 2 * depth
+
+    def test_open_pocket_carves_the_bore(self):
+        # Default fit: Ø6+0.2 bore, 2+0.1 deep.
+        doc = make_doc(front=[self.pocket()], thickness=self.PT)
+        scene, _, vols = volumes_of(doc)
+        removed = RECT_AREA * self.PT - vols["base"].volume()
+        assert removed == pytest.approx(self.bore_volume(6.2, 2.1), rel=0.01)
+        assert vols["base"].genus() == 0, "an open pocket is a dent, not a hole"
+
+    def test_pocket_leaves_a_floor(self):
+        doc = make_doc(front=[self.pocket()], thickness=self.PT)
+        _, _, vols = volumes_of(doc)
+        # Probe a 1mm cube on the bed directly under the pocket centre.
+        probe = vols["base"] ^ Manifold.cube((1, 1, 1)).translate(
+            (20 + 3.1 - 0.5, H - 15 - 3.1 - 0.5, 0))
+        assert probe.volume() == pytest.approx(1.0, rel=1e-3), \
+            "the floor under the pocket must stay solid"
+
+    def test_clearance_opens_the_bore(self):
+        tight = make_doc(front=[self.pocket(clearance=0.0, depthClearance=0.0)],
+                         thickness=self.PT)
+        loose = make_doc(front=[self.pocket(clearance=0.6, depthClearance=0.0)],
+                         thickness=self.PT)
+        v_tight = RECT_AREA * self.PT - volumes_of(tight)[2]["base"].volume()
+        v_loose = RECT_AREA * self.PT - volumes_of(loose)[2]["base"].volume()
+        assert v_tight == pytest.approx(self.bore_volume(6.0, 2.0), rel=0.01)
+        assert v_loose == pytest.approx(self.bore_volume(6.6, 2.0), rel=0.01)
+
+    def test_ceiling_seals_the_pocket(self):
+        doc = make_doc(front=[self.pocket(ceiling=0.8)], thickness=self.PT)
+        scene, _, vols = volumes_of(doc)
+        base = vols["base"]
+        assert base.genus() == -1, "a sealed pocket is an enclosed void"
+        # Nothing of it reaches either surface: the full outline is still there.
+        bb = base.bounding_box()
+        assert (bb[2], bb[5]) == pytest.approx((0.0, self.PT), abs=1e-6)
+        # ...and the lid over it is solid material.
+        lid = base ^ Manifold.cube((1, 1, 0.8)).translate(
+            (20 + 3.1 - 0.5, H - 15 - 3.1 - 0.5, self.PT - 0.8))
+        assert lid.volume() == pytest.approx(0.8, rel=1e-3)
+
+    def test_pocket_breaking_through_warns(self):
+        doc = make_doc(front=[self.pocket(depth=3.8, ceiling=0.4)],
+                       thickness=self.PT)
+        _, trace, _ = volumes_of(doc)
+        assert any("breaks through" in w for w in trace.warnings)
+
+    def test_back_face_pocket_opens_on_the_bed_face(self):
+        doc = make_doc(back=[self.pocket()], thickness=self.PT)
+        _, _, vols = volumes_of(doc)
+        base = vols["base"]
+        # Back-face features mirror around the vertical edge: doc x=20 lands at
+        # physical x = W-20-6.2. Probe the bed face there — it must be open...
+        cx, cy = W - 20 - 3.1, H - 15 - 3.1
+        at_bed = base ^ Manifold.cube((1, 1, 1)).translate((cx - 0.5, cy - 0.5, 0))
+        assert at_bed.volume() == pytest.approx(0.0, abs=1e-6)
+        # ...and the top face solid.
+        at_top = base ^ Manifold.cube((1, 1, 1)).translate(
+            (cx - 0.5, cy - 0.5, self.PT - 1))
+        assert at_top.volume() == pytest.approx(1.0, rel=1e-3)
+
+    def test_pocket_volume_stays_empty_of_other_materials(self):
+        # A flush inlay sunk into the same column must not fill the cavity the
+        # insert is meant to occupy — the pocket claims that volume.
+        doc = make_doc(front=[
+            square("inlay", 18, 13, 12, "text", {"mode": "flush", "depth": 1.0},
+                   z_order=0),
+            self.pocket(z_order=1),
+        ], thickness=self.PT)
+        scene, _, vols = volumes_of(doc)
+        cavity = Manifold.cylinder(2.1, 3.1, 3.1, circular_segments=64) \
+            .translate((20 + 3.1, H - 15 - 3.1, self.PT - 2.1))
+        assert (vols["text"] ^ cavity).volume() == pytest.approx(0.0, abs=1e-3)
+        assert_disjoint(scene)
+
+    def test_lattice_base_gets_a_solid_collar(self):
+        raw = make_doc(front=[self.pocket()], thickness=self.PT).to_dict()
+        raw["object"]["fill"] = {"type": "lattice", "pattern": "grid",
+                                 "spacing": 5, "lineWidth": 1.2, "border": 2.5}
+        doc = DocumentV2.from_dict(raw)
+        _, _, vols = volumes_of(doc)
+        # Ring between the bore edge (r=3.1) and the collar edge (r=4.6):
+        # a 1mm cube centred at r=3.8 from the axis must be solid, not lattice.
+        probe = vols["base"] ^ Manifold.cube((1, 1, self.PT)).translate(
+            (20 + 3.1 + 3.3, H - 15 - 3.1 - 0.5, 0))
+        assert probe.volume() == pytest.approx(self.PT, rel=1e-3), \
+            "an insert needs solid material around it, not a grid of air"

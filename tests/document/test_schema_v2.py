@@ -157,6 +157,33 @@ class TestValidation:
             "width": 85, "height": 54}
         validate_v2(doc)
 
+    def test_color_layer_round_trip(self):
+        doc = minimal_doc()
+        doc["object"]["outline"] = {
+            "type": "path", "svgInline": "<svg/>", "width": 85, "height": 54,
+            "colorMap": {"#ffffff": "text"}, "colorDepth": 0.6,
+            "colorFace": "both"}
+        loaded = DocumentV2.from_dict(doc)
+        assert loaded.object.outline.color_depth == 0.6
+        assert loaded.object.outline.color_face == "both"
+        assert loaded.to_dict()["object"]["outline"]["colorFace"] == "both"
+
+    def test_color_layer_defaults_to_the_front(self):
+        doc = minimal_doc()
+        doc["object"]["outline"] = {
+            "type": "path", "svgInline": "<svg/>", "width": 85, "height": 54,
+            "colorMap": {"#ffffff": "text"}, "colorDepth": 0.6}
+        out = DocumentV2.from_dict(doc).to_dict()["object"]["outline"]
+        assert out["colorDepth"] == 0.6 and "colorFace" not in out
+
+    def test_color_depth_below_thickness_required(self):
+        doc = minimal_doc()
+        doc["object"]["outline"] = {
+            "type": "path", "svgInline": "<svg/>", "width": 85, "height": 54,
+            "colorMap": {"#ffffff": "text"}, "colorDepth": 2.5}  # thickness 1.8
+        with pytest.raises(DocumentValidationError, match="colorDepth"):
+            validate_v2(doc)
+
     def test_variable_font_axes(self):
         doc = minimal_doc()
         doc["faces"]["front"]["features"] = [text_feature(
@@ -259,3 +286,67 @@ class TestHoleFeature:
         f = DocumentV2.from_dict(doc).faces["front"].features[0]
         assert f.tab is False
         assert "tab" not in DocumentV2.from_dict(doc).to_dict()["faces"]["front"]["features"][0]
+
+
+class TestPocketFeature:
+    def pocket(self, **overrides):
+        feat = {
+            "id": "p1", "type": "pocket", "pocketType": "circle",
+            "diameter": 6, "depth": 2,
+            "transform": {"x": 10, "y": 10}, "material": "base",
+            "relief": {"mode": "cut"},
+        }
+        feat.update(overrides)
+        return feat
+
+    def test_pocket_valid(self):
+        doc = minimal_doc()
+        doc["faces"]["front"]["features"] = [self.pocket()]
+        DocumentV2.from_dict(doc)  # must not raise
+
+    def test_omitted_tolerances_get_the_fit_defaults(self):
+        # No clearance stated is "no tolerance decided", not "zero slack" —
+        # a zero-slack bore would never take the insert.
+        doc = minimal_doc()
+        doc["faces"]["front"]["features"] = [self.pocket()]
+        f = DocumentV2.from_dict(doc).faces["front"].features[0]
+        assert (f.clearance, f.depth_clearance) == (0.2, 0.1)
+        assert f.pocket_bore == pytest.approx(6.2)
+        assert f.pocket_depth == pytest.approx(2.1)
+
+    def test_explicit_zero_clearance_survives_a_round_trip(self):
+        doc = minimal_doc()
+        doc["faces"]["front"]["features"] = [
+            self.pocket(clearance=0, depthClearance=0)]
+        loaded = DocumentV2.from_dict(doc)
+        out = loaded.to_dict()["faces"]["front"]["features"][0]
+        assert (out["clearance"], out["depthClearance"]) == (0, 0)
+        again = DocumentV2.from_dict(loaded.to_dict()).faces["front"].features[0]
+        assert (again.clearance, again.depth_clearance) == (0, 0)
+
+    def test_round_trip_keeps_insert_and_ceiling(self):
+        doc = minimal_doc()
+        doc["faces"]["front"]["features"] = [
+            self.pocket(insert="rfid", diameter=25, depth=0.9, ceiling=0.8,
+                        clearance=0.3, depthClearance=0.15)]
+        loaded = DocumentV2.from_dict(doc)
+        f = loaded.faces["front"].features[0]
+        assert (f.insert, f.diameter, f.depth, f.ceiling) == ("rfid", 25, 0.9, 0.8)
+        out = loaded.to_dict()["faces"]["front"]["features"][0]
+        assert out["insert"] == "rfid" and out["ceiling"] == 0.8
+        DocumentV2.from_dict(loaded.to_dict())  # revalidates
+
+    def test_pocket_requires_its_size(self):
+        for missing in ("pocketType", "diameter", "depth"):
+            doc = minimal_doc()
+            feat = self.pocket()
+            del feat[missing]
+            doc["faces"]["front"]["features"] = [feat]
+            with pytest.raises(DocumentValidationError):
+                DocumentV2.from_dict(doc)
+
+    def test_unknown_pocket_type_rejected(self):
+        doc = minimal_doc()
+        doc["faces"]["front"]["features"] = [self.pocket(pocketType="square")]
+        with pytest.raises(DocumentValidationError):
+            DocumentV2.from_dict(doc)

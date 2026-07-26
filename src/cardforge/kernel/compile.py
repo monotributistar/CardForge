@@ -10,6 +10,9 @@ Operation order (see plan):
   7. mirror semantics: back-face features are authored in back-face document
      space and mirrored around the vertical edge into physical space; their
      relief grows downward from z=0.
+  8. multicolor outline: what is left of the base splits into per-material
+     color volumes — through-columns, or a colorDepth-deep layer on the
+     coloured face, which leaves the other face in base material.
 
 The result is a CompiledScene {material → Manifold} whose volumes are
 pairwise disjoint — the fidelity contract every export shares.
@@ -38,6 +41,10 @@ _EPS = 1e-9
 # Default backing-pad height over a SOLID base (mm). Over a lattice the pad
 # stays full-thickness — it must reach the bed to support the feature.
 _DEFAULT_PAD_MM = 0.6
+
+# Solid collar fused around a pocket bore when the base is a lattice — an
+# insert needs material to grip, not a grid of air.
+_POCKET_COLLAR_MM = 1.5
 
 
 @dataclass
@@ -70,6 +77,28 @@ class _Claim:
 
 def _extrude_at(cs: CrossSection, height: float, z0: float) -> Manifold:
     return cs.extrude(height).translate((0, 0, z0))
+
+
+def _color_bands(doc: DocumentV2, T: float) -> List[Tuple[float, float]]:
+    """(z0, height) slabs the outline's colors occupy, with 1mm of headroom
+    outside the body so the intersection lands exactly on the band.
+
+    Without colorDepth the colors run through the whole body (legacy): both
+    faces show them, and anything on the back sits on a coloured column.
+    With colorDepth they are a layer that deep on `colorFace`, leaving base
+    material behind — a clean canvas for the other face.
+    """
+    o = doc.object.outline
+    d = min(o.color_depth, T - _EPS) if o.color_depth else 0.0
+    if d <= 0:
+        return [(-(2 * T + 1.0), 4 * T + 2.0)]
+    bands: List[Tuple[float, float]] = []
+    face = o.color_face or "front"
+    if face in ("front", "both"):
+        bands.append((T - d, d + 1.0))
+    if face in ("back", "both"):
+        bands.append((-1.0, d + 1.0))
+    return bands
 
 
 def compile_document(doc: DocumentV2, asset_root: Path | str = ".") -> Tuple[CompiledScene, CompileTrace]:
@@ -148,6 +177,53 @@ def compile_document(doc: DocumentV2, asset_root: Path | str = ".") -> Tuple[Com
                             "it inward")
                 continue
 
+            # ── Pocket: blind cavity that houses an insert ────────────────
+            # Like a hole, it owns its own z geometry and ignores `relief`.
+            # The cavity is `depth + depthClearance` deep and its mouth sits
+            # `ceiling` below the face: ceiling 0 opens it at the surface,
+            # anything more buries the insert under a printed lid (the print
+            # must then be paused to drop it in — the constraint layer says
+            # at which z). Nothing is clamped: a pocket that would break
+            # through stays visibly broken and is reported, rather than
+            # silently shrinking to a depth the magnet no longer fits.
+            if feature.type == "pocket":
+                d = feature.pocket_depth
+                ceil = max(0.0, feature.ceiling)
+                if d <= 0:
+                    trace.skipped.append(feature.id)
+                    trace.warnings.append(
+                        f"{face_id}/{feature.id}: pocket depth must be positive")
+                    continue
+                z0 = ceil if is_back else T - ceil - d
+                for _mat, cs in fs.shapes:
+                    if cs.is_empty():
+                        continue
+                    if is_back:
+                        cs = cs.mirror((1, 0)).translate((W, 0))
+                    # Over a lattice the bore would be cut into air — fuse a
+                    # solid collar into the base so the insert has material
+                    # around it to grip.
+                    if lattice:
+                        base_backing_2d.append(
+                            (cs.offset(_POCKET_COLLAR_MM, 0)) ^ outline_phys)
+                    cs = cs ^ outline_phys
+                    if cs.is_empty():
+                        continue
+                    cavity = _extrude_at(cs, d, z0)
+                    base_subtracts.append(((feature.z_order, seq), feature.id,
+                                           cavity, face_id))
+                    # The cavity is void: no other feature may put material
+                    # in it (an inlay sunk into the same column would fill
+                    # the pocket the insert is meant to occupy).
+                    claims.append(_Claim((feature.z_order, seq), feature.id,
+                                         cavity, face_id))
+                if ceil + d >= T:
+                    trace.warnings.append(
+                        f"{face_id}/{feature.id}: pocket is {d:.2f}mm deep under a "
+                        f"{ceil:.2f}mm lid — that breaks through the {T:g}mm body; "
+                        "reduce the depth or the ceiling")
+                continue
+
             relief = feature.relief
 
             # Bed-facing (back) face must stay flat: it prints against the bed,
@@ -163,6 +239,7 @@ def compile_document(doc: DocumentV2, asset_root: Path | str = ".") -> Tuple[Com
                 continue
 
             footprint = CrossSection()  # union of this feature's placed shapes
+            area_placed = area_kept = 0.0
             for mat, cs in fs.shapes:
                 if cs.is_empty():
                     continue
@@ -171,7 +248,9 @@ def compile_document(doc: DocumentV2, asset_root: Path | str = ".") -> Tuple[Com
                 # outside a path-shaped border.
                 if is_back:
                     cs = cs.mirror((1, 0)).translate((W, 0))
+                area_placed += cs.area()
                 cs = cs ^ outline_phys
+                area_kept += cs.area()
                 if cs.is_empty():
                     continue
                 footprint = footprint + cs
@@ -237,6 +316,15 @@ def compile_document(doc: DocumentV2, asset_root: Path | str = ".") -> Tuple[Com
                 else:
                     trace.warnings.append(
                         f"{face_id}/{feature.id}: unknown relief mode '{relief.mode}'")
+
+            # How much of the feature the outline ate. On an SVG silhouette a
+            # feature can sit well inside the bounding box and still be cut by
+            # the artwork's contour — invisible in the 2D view, so record it
+            # and let the constraint layer speak up.
+            if fs.record is not None and area_placed > 0:
+                lost = 1.0 - area_kept / area_placed
+                if lost > 1e-4:
+                    fs.record.extra["clipped_pct"] = round(lost * 100, 1)
 
             # ── Keep-out (e.g. QR quiet zone) ──────────────────────────────
             # The feature reserves a region beyond its own geometry: any
@@ -381,12 +469,16 @@ def compile_document(doc: DocumentV2, asset_root: Path | str = ".") -> Tuple[Com
                        for pid, (mat, solid) in part_solids.items()}
 
     # ── Multicolor SVG outline: split the (already carved and cut) base
-    # into full-thickness per-material columns. Splitting LAST means every
+    # into per-material color volumes — through-columns, or a layer that
+    # deep on one face (see _color_bands). Splitting LAST means every
     # cavity, cut, and lattice op above applied once to the whole body —
     # the color regions only partition what is left.
     parts: List[ScenePart] = []
+    bands = _color_bands(doc, T)
     for mat, region in outline_color_regions(doc):
-        prism = _extrude_at(region, 4 * T + 2.0, -(2 * T + 1.0))
+        prism = Manifold()
+        for z0, h in bands:
+            prism = prism + _extrude_at(region, h, z0)
         piece = base ^ prism
         if piece.is_empty():
             continue

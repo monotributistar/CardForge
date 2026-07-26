@@ -113,5 +113,10 @@ export function getFeatureBoundsMm(feature: Feature, cardW: number, cardH: numbe
       const d = feature.diameter ?? 5
       return { x, y, w: d, h: d }
     }
+    case 'pocket': {
+      // The bore, not the insert: what gets cut is what you place.
+      const d = feature.diameter + (feature.clearance ?? 0)
+      return { x, y, w: d, h: d }
+    }
   }
 }

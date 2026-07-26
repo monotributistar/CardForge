@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from manifold3d import CrossSection
 
@@ -115,7 +115,7 @@ def build_feature_shapes(doc: DocumentV2, face_id: str, feature: Feature,
     px, py = _doc_to_phys_anchor(f.transform.x, f.transform.y, obj_h)
     rot = -f.transform.rotation  # doc rotation is screen-clockwise; phys is y-up
     scale = f.transform.scale
-    extra: Dict[str, float] = {}
+    extra: Dict[str, Any] = {}
 
     def placed(local: CrossSection) -> CrossSection:
         return s2.place(local, px, py, rotation_deg=rot, scale=scale)
@@ -281,6 +281,26 @@ def build_feature_shapes(doc: DocumentV2, face_id: str, feature: Feature,
         extra["hole_type"] = f.hole_type
         shapes = [(f.material, placed(local))]
 
+    elif f.type == "pocket":
+        # Blind cavity for an insert. Only cylindrical for now: a circular
+        # bore is the one shape that needs no orientation control and that
+        # every FDM printer holds size on reasonably well.
+        if f.pocket_type not in ("", "circle"):
+            return FeatureShapes(skip_reason=f"unknown pocketType '{f.pocket_type}'")
+        bore = f.pocket_bore
+        if bore <= 0:
+            return FeatureShapes(skip_reason="pocket needs a positive diameter")
+        local = s2.circle(bore)
+        extra["pocket_insert"] = f.insert or "magnet"
+        extra["pocket_bore_mm"] = bore              # diameter actually cut
+        extra["pocket_depth_mm"] = f.pocket_depth   # depth actually cut
+        extra["pocket_ceiling_mm"] = f.ceiling
+        extra["pocket_clearance_mm"] = f.clearance
+        extra["pocket_depth_clearance_mm"] = f.depth_clearance
+        extra["pocket_nominal_d_mm"] = f.diameter
+        extra["pocket_nominal_depth_mm"] = f.depth
+        shapes = [(f.material, placed(local))]
+
     else:
         return FeatureShapes(skip_reason=f"unknown feature type '{f.type}'")
 
@@ -293,8 +313,10 @@ def build_feature_shapes(doc: DocumentV2, face_id: str, feature: Feature,
         union = union + cs
 
     # Thinnest printable detail (mm) — compared against the nozzle downstream.
-    # Cuts are holes; their "width" isn't a printable wall, so skip.
-    if f.relief.mode != "cut" and f.type != "hole":
+    # Cuts are holes; their "width" isn't a printable wall, so skip. Same for
+    # a pocket: the bore is a void, and its walls are checked in mm of
+    # remaining floor/lid, not as a stroke width.
+    if f.relief.mode != "cut" and f.type not in ("hole", "pocket"):
         extra["min_width_mm"] = round(min_feature_width(union), 3)
 
     # Hole tab: the hole outline dilated by tabMargin (round join) — a lug
@@ -313,10 +335,13 @@ def build_feature_shapes(doc: DocumentV2, face_id: str, feature: Feature,
 
     relief_value = (f.relief.height if f.relief.mode == "emboss"
                     else 0.0 if f.relief.mode == "cut" else f.relief.depth)
-    # A hole is a through-cut by definition, whatever relief the doc carries.
-    relief_mode = "cut" if f.type == "hole" else f.relief.mode
+    # A hole is a through-cut and a pocket is a blind cavity, by definition —
+    # whatever relief the document happens to carry.
+    relief_mode = f.relief.mode
     if f.type == "hole":
-        relief_value = 0.0
+        relief_mode, relief_value = "cut", 0.0
+    elif f.type == "pocket":
+        relief_mode, relief_value = "pocket", f.pocket_depth
     record = FeatureRecord(
         feature_id=f.id,
         face_id=face_id,

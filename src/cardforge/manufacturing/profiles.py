@@ -31,9 +31,12 @@ class ManufacturingProfile:
     min_text_stroke: float = 0.6
 
     # Supported features
-    supported_relief_modes: List[str] = field(default_factory=lambda: ["emboss", "deboss", "flush", "cut", "deboss-backed"])
+    # "pocket" is the blind insert cavity — carved, so every subtractive
+    # process handles it; its wall/lid checks live in kernel/constraints.
+    supported_relief_modes: List[str] = field(default_factory=lambda: ["emboss", "deboss", "flush", "cut", "deboss-backed", "pocket"])
     supported_features: List[str] = field(default_factory=lambda: [
         "text-block", "text-pattern", "pattern", "qr", "icon", "shape",
+        "hole", "pocket",
     ])
 
     @classmethod

@@ -8,9 +8,12 @@ export type Outline =
   | { type: 'rounded-rect'; width: number; height: number; radius: number; corners?: { tl?: number; tr?: number; br?: number; bl?: number } }
   | { type: 'circle'; diameter: number }
   // path: svgInline (full SVG markup — preferred) or svgPath (raw `d` data).
-  // colorMap {svg hex → material id} extrudes each color full-thickness in
-  // its own material (multicolor base); unmapped regions print in base.
-  | { type: 'path'; svgPath: string; svgInline?: string; colorMap?: Record<string, string>; width: number; height: number }
+  // colorMap {svg hex → material id} extrudes each color in its own material
+  // (multicolor base); unmapped regions print in base.
+  // colorDepth limits the colors to a layer that deep on colorFace (default
+  // 'front'), leaving base material behind it — so the other face is a clean
+  // canvas for text/QR. Omit it and the colors run through the whole body.
+  | { type: 'path'; svgPath: string; svgInline?: string; colorMap?: Record<string, string>; colorDepth?: number; colorFace?: 'front' | 'back' | 'both'; width: number; height: number }
 
 export type Fill =
   | { type: 'solid' }
@@ -49,6 +52,19 @@ export interface ShapeFeature extends FeatureBase { type: 'shape'; shapeType: 'r
 // material lug (hole dilated by tabMargin) fused into the base, so the hole
 // can sit outside the outline.
 export interface HoleFeature extends FeatureBase { type: 'hole'; holeType: 'circle'|'slot'; diameter?: number; width?: number; height?: number; tab?: boolean; tabMargin?: number }
-export type Feature = TextBlockFeature|TextPatternFeature|PatternFeature|QRFeature|IconFeature|ShapeFeature|HoleFeature
+// Pocket — a blind cavity sized to hold an insert (magnet, RFID/NFC tag).
+// Cylindrical only for now. diameter/depth are the INSERT's nominal size; the
+// cavity actually cut is (diameter + clearance) × (depth + depthClearance), so
+// the fit is tuned without lying about what goes in it. `ceiling` is the lid
+// left over the pocket, measured from the face: 0 opens it at the surface,
+// anything more buries the insert (the print must pause to drop it in).
+// Like a hole, a pocket owns its own z geometry and ignores `relief`.
+export interface PocketFeature extends FeatureBase { type: 'pocket'; pocketType: 'circle'; insert?: 'magnet'|'rfid'|'other'; diameter: number; depth: number; clearance?: number; depthClearance?: number; ceiling?: number }
+export type Feature = TextBlockFeature|TextPatternFeature|PatternFeature|QRFeature|IconFeature|ShapeFeature|HoleFeature|PocketFeature
+
+/** Fit defaults, mirroring the Core (document/schema_v2.py). A printed bore
+ *  comes out undersized, so an insert needs the cavity opened up to fit. */
+export const DEFAULT_POCKET_CLEARANCE = 0.2
+export const DEFAULT_POCKET_DEPTH_CLEARANCE = 0.1
 
 export type FaceId = 'front' | 'back'

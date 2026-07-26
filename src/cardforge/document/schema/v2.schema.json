@@ -118,6 +118,15 @@
             "svgPath": { "type": "string" },
             "svgInline": { "type": "string" },
             "colorMap": { "type": "object", "additionalProperties": { "type": "string" } },
+            "colorDepth": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "description": "Depth (mm) of the multicolor layer, measured from the coloured face. Omitted = the colors run through the full thickness."
+            },
+            "colorFace": {
+              "enum": ["front", "back", "both"],
+              "description": "Which face the colors are visible on. Only meaningful with colorDepth."
+            },
             "width": { "type": "number", "exclusiveMinimum": 0 },
             "height": { "type": "number", "exclusiveMinimum": 0 }
           }
@@ -262,7 +271,7 @@
       "required": ["id", "type", "transform", "material", "relief"],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
-        "type": { "enum": ["text-block", "text-pattern", "pattern", "qr", "icon", "shape", "hole"] },
+        "type": { "enum": ["text-block", "text-pattern", "pattern", "qr", "icon", "shape", "hole", "pocket"] },
         "name": { "type": "string" },
         "transform": { "$ref": "#/$defs/transform" },
         "material": { "type": "string", "minLength": 1 },
@@ -375,6 +384,39 @@
                 "tabMargin": { "type": "number", "exclusiveMinimum": 0 }
               },
               "required": ["type", "holeType"]
+            },
+            {
+              "type": "object",
+              "description": "Blind cavity sized to hold an insert (magnet, RFID/NFC tag). diameter/depth are the insert's nominal size; the cavity cut is (diameter + clearance) x (depth + depthClearance). relief is ignored — the pocket owns its own z geometry.",
+              "properties": {
+                "type": { "const": "pocket" },
+                "pocketType": { "enum": ["circle"] },
+                "insert": {
+                  "enum": ["magnet", "rfid", "other"],
+                  "description": "What goes in it. A label for the build notes — it has no effect on geometry."
+                },
+                "diameter": {
+                  "type": "number", "exclusiveMinimum": 0,
+                  "description": "Nominal insert diameter (mm), before clearance."
+                },
+                "depth": {
+                  "type": "number", "exclusiveMinimum": 0,
+                  "description": "Nominal insert thickness (mm), before depthClearance."
+                },
+                "clearance": {
+                  "type": "number", "minimum": 0,
+                  "description": "Diametral slack (mm) added to diameter. Omitted = 0.2."
+                },
+                "depthClearance": {
+                  "type": "number", "minimum": 0,
+                  "description": "Slack (mm) added to depth. Omitted = 0.1."
+                },
+                "ceiling": {
+                  "type": "number", "minimum": 0,
+                  "description": "Lid left over the cavity (mm), measured from the face. 0 = open at the surface; anything else buries the insert and the print must be paused to drop it in."
+                }
+              },
+              "required": ["type", "pocketType", "diameter", "depth"]
             }
           ]
         }

@@ -13,10 +13,11 @@ Structure:
     assets:    asset id → file path (SVG icons, fonts)
     faces:     front / back, each a list of features
 
-Feature types: text-block, text-pattern, pattern, qr, icon, shape, hole.
+Feature types: text-block, text-pattern, pattern, qr, icon, shape, hole, pocket.
 Relief modes:  emboss, deboss, flush, cut, deboss-backed — any feature can use
                any relief mode (a QR can be a through-cut, text can be a
-               backed cavity, etc.).
+               backed cavity, etc.), except `hole` and `pocket`, which own
+               their own z geometry and carry a fixed `{"mode": "cut"}`.
 """
 
 from __future__ import annotations
@@ -28,8 +29,16 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 SCHEMA_VERSION = "2.0"
-FEATURE_TYPES = ("text-block", "text-pattern", "pattern", "qr", "icon", "shape", "hole")
+FEATURE_TYPES = ("text-block", "text-pattern", "pattern", "qr", "icon", "shape",
+                 "hole", "pocket")
 RELIEF_MODES = ("emboss", "deboss", "flush", "cut", "deboss-backed")
+
+# Pocket fit defaults (mm). An FDM bore prints undersized, so a magnet/tag
+# needs the cavity opened up to go in at all — these are the values a pocket
+# gets when the document does not state its own. They are always written back
+# out, so the tolerance a part was built with stays visible in the file.
+DEFAULT_POCKET_CLEARANCE = 0.2        # added to the insert diameter
+DEFAULT_POCKET_DEPTH_CLEARANCE = 0.1  # added to the insert thickness
 
 _SCHEMA_PATH = Path(__file__).parent / "schema" / "v2.schema.json"
 
@@ -63,7 +72,12 @@ class Outline:
     path: `svg_inline` (full SVG markup — preferred: transforms, all shape
     elements, and multicolor supported) or `svg_path` (a raw `d` string).
     With svg_inline, `color_map` {svg hex → material id} extrudes each fill
-    color full-thickness in its own material; unmapped regions stay base.
+    color in its own material; unmapped regions stay base.
+
+    `color_depth` limits the colors to a layer that deep, measured from the
+    coloured face (`color_face`: front | back | both) — the rest of the body
+    stays base material, so the opposite face is a clean single-colour canvas
+    for text/QR. 0 = the colors run through the full thickness.
     """
 
     type: str
@@ -75,6 +89,8 @@ class Outline:
     svg_path: str = ""
     svg_inline: str = ""
     color_map: Dict[str, str] = field(default_factory=dict)
+    color_depth: float = 0.0
+    color_face: str = "front"
 
     def corner_radii(self) -> Dict[str, float]:
         """Effective per-corner radii, filling from `radius` where unset."""
@@ -215,6 +231,29 @@ class Feature:
     hole_type: str = ""                                      # hole: circle | slot
     tab: bool = False                                        # hole: add a material lug
     tab_margin: float = 0.0                                  # hole: lug ring width (0 → 3mm)
+    # pocket — blind cavity sized to hold an insert (magnet, RFID/NFC tag).
+    # `diameter`/`depth` are the INSERT's nominal size; the cavity actually
+    # cut is (diameter + clearance) × (depth + depth_clearance), so the fit is
+    # tuned without lying about what goes in it. `ceiling` is the lid left
+    # over the pocket, measured from the face: 0 opens it at the surface,
+    # anything else buries the insert (the print pauses to drop it in).
+    pocket_type: str = ""                                    # pocket: circle
+    insert: str = ""                                         # pocket: magnet | rfid | other
+    depth: float = 0.0                                       # pocket: insert thickness
+    clearance: float = 0.0                                   # pocket: diametral slack
+    depth_clearance: float = 0.0                             # pocket: depth slack
+    ceiling: float = 0.0                                     # pocket: lid over the cavity
+
+    # ── Pocket geometry (nominal + tolerance) ──────────────────────────
+    @property
+    def pocket_bore(self) -> float:
+        """Diameter actually cut (mm)."""
+        return self.diameter + self.clearance
+
+    @property
+    def pocket_depth(self) -> float:
+        """Cavity depth actually cut (mm)."""
+        return self.depth + self.depth_clearance
 
 
 @dataclass
@@ -279,6 +318,8 @@ class DocumentV2:
             svg_path=ol.get("svgPath", ""),
             svg_inline=ol.get("svgInline", ""),
             color_map=dict(ol.get("colorMap", {})),
+            color_depth=ol.get("colorDepth", 0.0),
+            color_face=ol.get("colorFace", "front"),
         )
         fd = o.get("fill") or {"type": "solid"}
         fill = Fill(
@@ -407,6 +448,14 @@ def validate_v2(data: Dict[str, Any]) -> None:
             if mat not in mat_ids:
                 errors.append(
                     f"object/outline: colorMap {svg_hex} → unknown material '{mat}'")
+        # A colour layer as deep as the body is not a layer — it is the
+        # legacy through-column, which is what omitting colorDepth means.
+        depth = ol.get("colorDepth")
+        thickness = data.get("object", {}).get("thickness")
+        if depth and isinstance(thickness, (int, float)) and depth >= thickness:
+            errors.append(
+                f"object/outline: colorDepth {depth} >= thickness {thickness} — "
+                "omit colorDepth for full-thickness colors")
         for face_id, face in data.get("faces", {}).items():
             for feat in face.get("features", []):
                 fid = feat.get("id", "?")
@@ -463,6 +512,10 @@ def _outline_to_dict(o: Outline) -> Dict[str, Any]:
             d["svgInline"] = o.svg_inline
         if o.color_map:
             d["colorMap"] = dict(o.color_map)
+        if o.color_depth:
+            d["colorDepth"] = o.color_depth
+            if o.color_face and o.color_face != "front":
+                d["colorFace"] = o.color_face
     return d
 
 
@@ -559,6 +612,16 @@ def _feature_from_dict(f: Dict[str, Any]) -> Feature:
         hole_type=f.get("holeType", ""),
         tab=f.get("tab", False),
         tab_margin=f.get("tabMargin", 0.0),
+        pocket_type=f.get("pocketType", ""),
+        insert=f.get("insert", ""),
+        depth=f.get("depth", 0.0),
+        # An omitted clearance is not "zero clearance" — it is "no tolerance
+        # stated", which for a press-in insert means the sane default.
+        clearance=f.get("clearance", DEFAULT_POCKET_CLEARANCE
+                        if f.get("type") == "pocket" else 0.0),
+        depth_clearance=f.get("depthClearance", DEFAULT_POCKET_DEPTH_CLEARANCE
+                              if f.get("type") == "pocket" else 0.0),
+        ceiling=f.get("ceiling", 0.0),
     )
 
 
@@ -656,6 +719,18 @@ def _feature_to_dict(f: Feature) -> Dict[str, Any]:
                 d[key] = val
         if f.tab:
             d["tab"] = True
+    elif f.type == "pocket":
+        d["pocketType"] = f.pocket_type or "circle"
+        d["diameter"] = f.diameter
+        d["depth"] = f.depth
+        # Tolerances are always written, including 0 — the fit a part was
+        # built with must survive a round-trip, not fall back to a default.
+        d["clearance"] = f.clearance
+        d["depthClearance"] = f.depth_clearance
+        if f.insert:
+            d["insert"] = f.insert
+        if f.ceiling:
+            d["ceiling"] = f.ceiling
     return d
 
 

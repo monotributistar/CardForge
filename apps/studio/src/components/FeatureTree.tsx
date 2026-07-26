@@ -3,7 +3,8 @@
 import React, { useState } from 'react'
 import type { Feature, FaceId } from '../types/cardforge'
 import { useDocumentStore, getActiveTab } from '../state/DocumentStore'
-import { defaultFeature } from '../studio/document/defaults'
+import { defaultFeature, defaultLogoFeature } from '../studio/document/defaults'
+import { applySvgToFeature } from '../studio/services/SvgImport'
 
 const TYPE_ICONS: Record<string, string> = {
   'text-block': 'T',
@@ -13,16 +14,22 @@ const TYPE_ICONS: Record<string, string> = {
   'icon': '🖼',
   'shape': '◇',
   'hole': '◎',
+  'pocket': '◉',
 }
 
-const ADDABLE: Array<{ type: Feature['type']; label: string }> = [
+// `logo` is an icon preset: a multicolor SVG inlaid flush, one material per
+// fill color — artwork placed ON a face, unlike an SVG used as the object's
+// own outline (Object → Outline).
+const ADDABLE: Array<{ type: Feature['type']; label: string; logo?: true }> = [
   { type: 'text-block', label: 'Text block' },
   { type: 'text-pattern', label: 'Text pattern' },
   { type: 'pattern', label: 'Pattern' },
   { type: 'qr', label: 'QR code' },
   { type: 'icon', label: 'Icon' },
+  { type: 'icon', label: 'Logo (multicolor SVG)', logo: true },
   { type: 'shape', label: 'Shape' },
   { type: 'hole', label: 'Hole (keyring / lanyard)' },
+  { type: 'pocket', label: 'Pocket (magnet / RFID)' },
 ]
 
 export const FeatureTree: React.FC = () => {
@@ -41,7 +48,7 @@ export const FeatureTree: React.FC = () => {
 
   const materialColor = (id: string) => doc.materials.find(m => m.id === id)?.color ?? '#8b949e'
 
-  const addFeature = (type: Feature['type']) => {
+  const addFeature = (entry: typeof ADDABLE[number]) => {
     setAddMenuOpen(false)
     const face = tab.activeFace
     // Prefer a non-base material that exists in this document
@@ -49,10 +56,15 @@ export const FeatureTree: React.FC = () => {
       ?? doc.materials.find(m => m.role !== 'base')?.id
       ?? doc.materials[0]?.id
       ?? 'text'
-    const feature = defaultFeature(type, face, material)
+    const feature = entry.logo
+      ? defaultLogoFeature(material)
+      : defaultFeature(entry.type, face, material)
     applyEdit(d => {
       if (!d.faces[face]) d.faces[face] = { features: [] }
       d.faces[face]!.features.push(feature)
+      // A logo prints one material per fill color from the start — map the
+      // placeholder's colors so it lands multicolor, not as a flat glyph.
+      if (entry.logo) applySvgToFeature(d, feature.id, (feature as { svgInline: string }).svgInline)
     })
     select(feature.id)
   }
@@ -116,8 +128,8 @@ export const FeatureTree: React.FC = () => {
         }}>
           {ADDABLE.map(a => (
             <div
-              key={a.type}
-              onClick={() => addFeature(a.type)}
+              key={a.label}
+              onClick={() => addFeature(a)}
               style={{ padding: '8px 10px', cursor: 'pointer', borderRadius: 4, display: 'flex', gap: 8, alignItems: 'center', color: '#c9d1d9', fontSize: 13 }}
               onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#21262d' }}
               onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}

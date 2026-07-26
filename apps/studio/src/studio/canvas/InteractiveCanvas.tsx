@@ -5,7 +5,7 @@
 // Edits (drag-to-move) are routed through DocumentStore.applyEdit.
 
 import React, { useRef, useState, useCallback, useEffect } from 'react'
-import type { Feature, Outline, Fill } from '../../types/cardforge'
+import type { Feature, Outline, Fill, FaceId } from '../../types/cardforge'
 
 import { useDocumentStore, getActiveTab, findFeature } from '../../state/DocumentStore'
 import { useCompileStore, mergeIssues } from '../../state/CompileStore'
@@ -354,9 +354,20 @@ export const InteractiveCanvas: React.FC = () => {
             <LatticeHintPattern fill={doc.object.fill} />
           </defs>
 
-          {/* Object outline (click selects the base object) */}
+          {/* Object outline (click selects the base object). The back view is
+              mirrored around the vertical edge — the same flip the kernel
+              applies to back-face content, so an asymmetric silhouette is
+              shown the way that face will actually meet it. */}
           <g onPointerDown={e => { e.stopPropagation(); selectObject() }} style={{ cursor: 'pointer' }}>
-            <ObjectOutline outline={doc.object.outline} fill={doc.object.fill} selected={objectSelected} />
+            <g transform={activeFace === 'back' ? `translate(${cardW},0) scale(-1,1)` : undefined}>
+              <ObjectOutline
+                outline={doc.object.outline}
+                fill={doc.object.fill}
+                selected={objectSelected}
+                artworkColors={showsOutlineColors(doc.object.outline, activeFace)}
+                baseColor={materialColor(doc.materials.find(m => m.role === 'base')?.id ?? doc.materials[0]?.id ?? '')}
+              />
+            </g>
           </g>
           {/* Safe margin (1mm inset, dashed) */}
           <rect
@@ -490,7 +501,23 @@ const LatticeHintPattern: React.FC<{ fill: Fill | undefined }> = ({ fill }) => {
   )
 }
 
-const ObjectOutline: React.FC<{ outline: Outline; fill: Fill | undefined; selected: boolean }> = ({ outline, fill, selected }) => {
+/** Does a multicolor SVG outline show its colors on this face? A colorDepth
+ *  layer only reaches the face(s) it was authored on — the other one prints
+ *  solid base material. Without colorDepth the colors run through the body. */
+function showsOutlineColors(outline: Outline, face: FaceId): boolean {
+  if (outline.type !== 'path' || !outline.svgInline || !outline.colorDepth) return true
+  const on = outline.colorFace ?? 'front'
+  return on === 'both' || on === face
+}
+
+// Repaints any opaque pixel of the artwork in the base material's color:
+// the silhouette as the uncolored face actually prints.
+const FLATTEN_FILTER_ID = 'outline-flatten'
+
+const ObjectOutline: React.FC<{
+  outline: Outline; fill: Fill | undefined; selected: boolean
+  artworkColors: boolean; baseColor: string
+}> = ({ outline, fill, selected, artworkColors, baseColor }) => {
   const stroke = selected ? '#58a6ff' : '#484f58'
   const strokeWidth = selected ? 0.6 : 0.3
   const common = { fill: '#161b22', stroke, strokeWidth }
@@ -531,14 +558,24 @@ const ObjectOutline: React.FC<{ outline: Outline; fill: Fill | undefined; select
     if (outline.svgInline) {
       // Full-markup outline: show the actual artwork (its colors preview the
       // multicolor base), stretched to the document's width×height exactly
-      // like the kernel scales it.
+      // like the kernel scales it. On a face the color layer does not reach,
+      // only the silhouette survives — flattened to the base material.
       return (
         <g>
+          {!artworkColors && (
+            <defs>
+              <filter id={FLATTEN_FILTER_ID}>
+                <feFlood floodColor={baseColor} result="flat" />
+                <feComposite in="flat" in2="SourceAlpha" operator="in" />
+              </filter>
+            </defs>
+          )}
           <rect x={0} y={0} width={outline.width} height={outline.height} fill="none" stroke={stroke} strokeWidth={strokeWidth} strokeDasharray="1 1" />
           <image
             href={`data:image/svg+xml,${encodeURIComponent(outline.svgInline)}`}
             x={0} y={0} width={outline.width} height={outline.height}
             preserveAspectRatio="none"
+            filter={artworkColors ? undefined : `url(#${FLATTEN_FILTER_ID})`}
           />
           {isLattice && <rect x={0} y={0} width={outline.width} height={outline.height} fill={hint} stroke="none" />}
         </g>
@@ -682,7 +719,34 @@ const FeatureGlyph: React.FC<{ feature: Feature; bounds: BoundsMm; color: string
       return <ShapeGlyph feature={feature} bounds={b} color={color} />
     case 'hole':
       return <HoleGlyph feature={feature} bounds={b} color={color} />
+    case 'pocket':
+      return <PocketGlyph feature={feature} bounds={b} color={color} />
   }
+}
+
+// Pocket: the bore drawn solid (that is the hole that gets cut), with the
+// insert it holds dashed inside it — the gap between the two rings IS the
+// clearance. A buried pocket (ceiling > 0) is drawn hollow: nothing of it
+// shows on the finished surface.
+const PocketGlyph: React.FC<{ feature: Extract<Feature, { type: 'pocket' }>; bounds: BoundsMm; color: string }> = ({ feature: f, bounds: b, color }) => {
+  const buried = (f.ceiling ?? 0) > 0
+  const cx = b.x + b.w / 2
+  const cy = b.y + b.h / 2
+  const insertR = f.diameter / 2
+  return (
+    <g>
+      <circle cx={cx} cy={cy} r={b.w / 2}
+        fill={buried ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.5)'}
+        stroke={color} strokeWidth={0.35}
+        strokeDasharray={buried ? '1 0.8' : undefined} />
+      <circle cx={cx} cy={cy} r={insertR} fill="none" stroke={color}
+        strokeWidth={0.25} strokeDasharray="0.6 0.6" opacity={0.8} />
+      <text x={cx} y={cy + Math.min(b.w, b.h) * 0.18} fontSize={Math.min(b.w, b.h) * 0.45}
+        textAnchor="middle" style={{ userSelect: 'none' }}>
+        {f.insert === 'rfid' ? '📶' : f.insert === 'other' ? '▫' : '🧲'}
+      </text>
+    </g>
+  )
 }
 
 // Hole: dark void (through-cut) + dashed lug outline when tab is on.

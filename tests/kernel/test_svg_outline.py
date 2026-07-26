@@ -22,7 +22,7 @@ STROKE_SVG = (
 )
 
 
-def _doc(outline: dict, materials=None, features=()) -> DocumentV2:
+def _doc(outline: dict, materials=None, features=(), back=()) -> DocumentV2:
     return DocumentV2.from_dict({
         "cardforge": SCHEMA_VERSION,
         "meta": {"id": "t", "name": "t"},
@@ -32,7 +32,8 @@ def _doc(outline: dict, materials=None, features=()) -> DocumentV2:
             {"id": "red", "name": "R", "color": "#ff0000", "slot": 2},
             {"id": "blue", "name": "U", "color": "#00aaff", "slot": 3},
         ],
-        "faces": {"front": {"features": list(features)}, "back": {"features": []}},
+        "faces": {"front": {"features": list(features)},
+                  "back": {"features": list(back)}},
     })
 
 
@@ -124,8 +125,86 @@ class TestSvgInlineOutline:
         with pytest.raises(DocumentValidationError, match="colorMap"):
             validate_v2(data)
 
+    def test_color_depth_at_or_over_thickness_rejected(self):
+        data = _doc({"type": "path", "svgInline": MULTI_SVG, "width": 80,
+                     "height": 48, "colorMap": {"#ff0000": "red"}}).to_dict()
+        data["object"]["outline"]["colorDepth"] = 2.0  # == thickness
+        with pytest.raises(DocumentValidationError, match="colorDepth"):
+            validate_v2(data)
+
     def test_svg_path_d_string_still_works(self):
         doc = _doc({"type": "path", "svgPath": "M0 0 H100 V60 H0 Z",
                     "width": 80, "height": 48})
         cs = outline_cross_section(doc)
         assert cs.area() == pytest.approx(80 * 48, rel=1e-3)
+
+
+class TestColorLayer:
+    """colorDepth/colorFace: the artwork's colors as a layer on one face,
+    with base material behind it — so the other face is a clean canvas."""
+
+    OUTLINE = {"type": "path", "svgInline": MULTI_SVG, "width": 80, "height": 48,
+               "colorMap": {"#1a1a1a": "base", "#ff0000": "red", "#00aaff": "blue"}}
+
+    def _doc(self, **extra):
+        return _doc({**self.OUTLINE, **extra})
+
+    @staticmethod
+    def _slab(doc, z0: float, h: float):
+        """Full-outline slab z ∈ [z0, z0+h] — a probe for what a face shows."""
+        return outline_cross_section(doc).extrude(h).translate((0, 0, z0))
+
+    @staticmethod
+    def _parts(doc):
+        return {p.id: p for p in compile_document(doc)[0].non_empty_parts()}
+
+    def test_front_layer_sits_on_top_of_the_body(self):
+        parts = self._parts(self._doc(colorDepth=0.6))
+        bb = parts["base:red"].solid.bounding_box()
+        assert (bb[2], bb[5]) == pytest.approx((1.4, 2.0), abs=1e-6)
+
+    def test_back_face_stays_solid_base_material(self):
+        doc = self._doc(colorDepth=0.6)
+        parts = self._parts(doc)
+        floor = self._slab(doc, 0.0, 0.2)   # the layers printed against the bed
+        area = outline_cross_section(doc).area()
+        assert (parts["base"].solid ^ floor).volume() == pytest.approx(area * 0.2,
+                                                                      rel=1e-3)
+        for pid in ("base:red", "base:blue"):
+            assert (parts[pid].solid ^ floor).is_empty()
+
+    def test_layer_volume_follows_the_declared_depth(self):
+        v_thin = compile_document(self._doc(colorDepth=0.4))[0].volumes["red"].volume()
+        v_thick = compile_document(self._doc(colorDepth=0.8))[0].volumes["red"].volume()
+        assert v_thick == pytest.approx(2 * v_thin, rel=1e-3)
+
+    def test_color_face_back_prints_the_colors_against_the_bed(self):
+        bb = self._parts(self._doc(colorDepth=0.6,
+                                   colorFace="back"))["base:red"].solid.bounding_box()
+        assert (bb[2], bb[5]) == pytest.approx((0.0, 0.6), abs=1e-6)
+
+    def test_color_face_both_leaves_base_in_the_middle(self):
+        doc = self._doc(colorDepth=0.5, colorFace="both")
+        red = self._parts(doc)["base:red"].solid
+        assert not (red ^ self._slab(doc, 0.0, 0.1)).is_empty()   # bed side
+        assert not (red ^ self._slab(doc, 1.9, 0.1)).is_empty()   # top side
+        assert (red ^ self._slab(doc, 0.9, 0.2)).is_empty()       # base between
+
+    def test_partition_stays_exact(self):
+        doc = self._doc(colorDepth=0.6)
+        scene, _ = compile_document(doc)
+        total = sum(p.solid.volume() for p in scene.non_empty_parts())
+        assert total == pytest.approx(outline_cross_section(doc).area() * 2.0,
+                                      rel=1e-3)
+
+    def test_back_inlay_leaves_the_front_colors_intact(self):
+        # The point of the layer: a plate inlaid on the back carves base
+        # material only — the logo's colors on the front are untouched.
+        plate = {"id": "plate", "type": "shape", "shapeType": "rect",
+                 "width": 20, "height": 10, "material": "blue",
+                 "transform": {"x": 30, "y": 20},
+                 "relief": {"mode": "flush", "depth": 0.6}}
+        ol = {**self.OUTLINE, "colorDepth": 0.6}
+        v_plain = compile_document(_doc(ol))[0].volumes["red"].volume()
+        v_back = compile_document(_doc(ol, back=[plate]))[0].volumes["red"].volume()
+        assert v_back == pytest.approx(v_plain, rel=1e-6)

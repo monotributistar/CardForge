@@ -5,11 +5,12 @@
 import React from 'react'
 import type {
   DocumentV2, Feature, Material, ReliefMode, Outline, Fill,
-  TextBlockFeature, TextPatternFeature, PatternFeature, QRFeature, IconFeature, ShapeFeature, HoleFeature,
+  TextBlockFeature, TextPatternFeature, PatternFeature, QRFeature, IconFeature, ShapeFeature, HoleFeature, PocketFeature,
 } from '../../types/cardforge'
+import { DEFAULT_POCKET_CLEARANCE, DEFAULT_POCKET_DEPTH_CLEARANCE } from '../../types/cardforge'
 import { useDocumentStore, getActiveTab, findFeature, removeFeatures } from '../../state/DocumentStore'
 import { FIELD_DEFS, QR_TYPE_LABELS, type QRType } from '../services/QRFields'
-import { applySvgOutline, applySvgToFeature } from '../services/SvgImport'
+import { applySvgOutline, applySvgToFeature, clampColorDepth, DEFAULT_COLOR_DEPTH } from '../services/SvgImport'
 import { ICON_LIBRARY, ICON_CATEGORY_LABELS, libraryIconSvg, type IconCategory, type LibraryIcon } from '../services/IconLibrary'
 import { listFonts, type FontInfo } from '../core/CoreClient'
 import {
@@ -120,8 +121,9 @@ const FeatureInspector: React.FC<{ doc: DocumentV2; feature: Feature; selectedId
         </Row>
       </Section>
 
-      {/* A hole is always a through-cut: relief and backing don't apply. */}
-      {feature.type !== 'hole' && (
+      {/* Holes and pockets own their own z geometry (through-cut / blind
+          cavity), so relief and backing don't apply to them. */}
+      {feature.type !== 'hole' && feature.type !== 'pocket' && (
         <>
           <ReliefEditor feature={feature} materials={doc.materials} edit={edit}
             isBack={doc.faces.back?.features.some(f => f.id === feature.id) ?? false} />
@@ -137,6 +139,12 @@ const FeatureInspector: React.FC<{ doc: DocumentV2; feature: Feature; selectedId
       {feature.type === 'icon' && <IconEditor feature={feature} materials={doc.materials} edit={edit} />}
       {feature.type === 'shape' && <ShapeEditor feature={feature} edit={edit} />}
       {feature.type === 'hole' && <HoleEditor feature={feature} edit={edit} />}
+      {feature.type === 'pocket' && (
+        <PocketEditor feature={feature} edit={edit}
+          thickness={doc.object.thickness}
+          layerHeight={doc.manufacturing?.layerHeight ?? 0.2}
+          isBack={doc.faces.back?.features.some(f => f.id === feature.id) ?? false} />
+      )}
     </div>
   )
 }
@@ -651,6 +659,137 @@ const HoleEditor: React.FC<{ feature: HoleFeature; edit: EditFn }> = ({ feature,
   )
 }
 
+// ── pocket ───────────────────────────────────────────────────────────
+
+/** Stock inserts, so the common cases are one click instead of a caliper.
+ *  [label, nominal diameter mm, nominal thickness mm] */
+const INSERT_SIZES: Record<string, Array<[string, number, number]>> = {
+  magnet: [
+    ['Ø3 × 1 mm', 3, 1], ['Ø4 × 2 mm', 4, 2], ['Ø5 × 2 mm', 5, 2],
+    ['Ø6 × 2 mm', 6, 2], ['Ø6 × 3 mm', 6, 3], ['Ø8 × 3 mm', 8, 3],
+    ['Ø10 × 2 mm', 10, 2], ['Ø10 × 3 mm', 10, 3],
+  ],
+  rfid: [
+    ['Ø18 × 0.9 mm (NTAG)', 18, 0.9], ['Ø25 × 0.9 mm (NTAG213)', 25, 0.9],
+    ['Ø30 × 1 mm', 30, 1], ['Ø38 × 1 mm', 38, 1],
+  ],
+  other: [],
+}
+
+/** Fit presets — how much slack the bore gets over the insert's nominal
+ *  size. A printed hole comes out undersized, so even a "press" fit needs
+ *  some: these are starting points to tune per printer, not laws. */
+const FIT_PRESETS: Array<[string, string, number, number]> = [
+  ['press', 'Press fit (tight, needs force)', 0.1, 0.05],
+  ['snug', 'Snug (push in by hand)', 0.2, 0.1],
+  ['loose', 'Loose (drops in, glue it)', 0.35, 0.15],
+]
+
+const PocketEditor: React.FC<{
+  feature: PocketFeature; edit: EditFn
+  thickness: number; layerHeight: number; isBack: boolean
+}> = ({ feature, edit, thickness, layerHeight, isBack }) => {
+  const insert = feature.insert ?? 'magnet'
+  const clearance = feature.clearance ?? DEFAULT_POCKET_CLEARANCE
+  const depthClearance = feature.depthClearance ?? DEFAULT_POCKET_DEPTH_CLEARANCE
+  const ceiling = feature.ceiling ?? 0
+
+  // What actually gets cut, and what is left holding it together.
+  const bore = feature.diameter + clearance
+  const cavityDepth = feature.depth + depthClearance
+  const floor = thickness - ceiling - cavityDepth
+  const minWall = Math.max(0.8, 2 * layerHeight)
+  // Mirrors the Core's slack (kernel/constraints.py): the floor is a
+  // difference of authored millimetres, so hitting the minimum exactly lands
+  // a few ulps under it and must not read as too thin.
+  const thinnerThanMin = (v: number) => v < minWall - 1e-6
+  const pauseZ = isBack ? ceiling + cavityDepth : thickness - ceiling
+
+  const sizes = INSERT_SIZES[insert] ?? []
+  const currentSize = sizes.find(([, d, h]) => d === feature.diameter && h === feature.depth)
+  const currentFit = FIT_PRESETS.find(([, , c, dc]) => c === clearance && dc === depthClearance)
+
+  const note = (text: string, color: string) => (
+    <div style={{ fontSize: 11, color, padding: '2px 0' }}>{text}</div>
+  )
+
+  return (
+    <Section title="Pocket">
+      <div style={{ fontSize: 11, color: '#8b949e', padding: '2px 0 6px' }}>
+        A blind cavity that houses an insert. Give it the insert's real size —
+        the clearance below is what opens the bore up so it actually fits.
+      </div>
+      <Row label="Insert" hint="What goes in the pocket — a label for the build notes, it doesn't change the geometry">
+        <Select value={insert} options={[['magnet', 'Magnet'], ['rfid', 'RFID / NFC tag'], ['other', 'Other']]}
+          onCommit={v => edit<PocketFeature>(f => { f.insert = v as PocketFeature['insert'] })} />
+      </Row>
+      {sizes.length > 0 && (
+        <Row label="Stock size" hint="Fills in the diameter and thickness of a common off-the-shelf insert">
+          <Select value={currentSize?.[0] ?? ''}
+            options={[['', 'Custom…'], ...sizes.map(([label]) => [label, label] as [string, string])]}
+            onCommit={v => {
+              const hit = sizes.find(([label]) => label === v)
+              if (!hit) return
+              edit<PocketFeature>(f => { f.diameter = hit[1]; f.depth = hit[2] })
+            }} />
+        </Row>
+      )}
+      <Row label="Insert Ø (mm)" hint="The insert's nominal diameter, before clearance">
+        <NumInput value={feature.diameter} step={0.5} min={0.1}
+          onCommit={v => edit<PocketFeature>(f => { f.diameter = v })} />
+      </Row>
+      <Row label="Insert thickness (mm)" hint="The insert's nominal thickness, before clearance">
+        <NumInput value={feature.depth} step={0.1} min={0.1}
+          onCommit={v => edit<PocketFeature>(f => { f.depth = v })} />
+      </Row>
+
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.6, textTransform: 'uppercase', color: '#8b949e', margin: '10px 0 6px' }}>
+        Tolerance
+      </div>
+      <Row label="Fit" hint="Preset slack for the bore — tune the numbers below for your printer">
+        <Select value={currentFit?.[0] ?? ''}
+          options={[['', 'Custom…'], ...FIT_PRESETS.map(([id, label]) => [id, label] as [string, string])]}
+          onCommit={v => {
+            const hit = FIT_PRESETS.find(([id]) => id === v)
+            if (!hit) return
+            edit<PocketFeature>(f => { f.clearance = hit[2]; f.depthClearance = hit[3] })
+          }} />
+      </Row>
+      <Row label="Ø clearance (mm)" hint="Added to the insert diameter. Printed holes come out undersized — 0 will not fit">
+        <NumInput value={clearance} step={0.05} min={0}
+          onCommit={v => edit<PocketFeature>(f => { f.clearance = v })} />
+      </Row>
+      <Row label="Depth clearance (mm)" hint="Added to the insert thickness, so it sits below the surface instead of proud of it">
+        <NumInput value={depthClearance} step={0.05} min={0}
+          onCommit={v => edit<PocketFeature>(f => { f.depthClearance = v })} />
+      </Row>
+      {clearance <= 0 && note('No clearance: the bore is cut at the exact nominal diameter and the insert will not go in.', '#d29922')}
+
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.6, textTransform: 'uppercase', color: '#8b949e', margin: '10px 0 6px' }}>
+        Placement
+      </div>
+      <Row label="Ceiling (mm)" hint="Material left over the pocket. 0 opens it at the surface; more than 0 seals the insert inside and the print must be paused to drop it in">
+        <NumInput value={ceiling} step={0.1} min={0}
+          onCommit={v => edit<PocketFeature>(f => { if (v > 0) f.ceiling = v; else delete f.ceiling })} />
+      </Row>
+
+      <Row label="Bore cut"><ReadOnly value={`Ø${bore.toFixed(2)} × ${cavityDepth.toFixed(2)} mm deep`} /></Row>
+      <Row label="Floor left"><ReadOnly value={`${floor.toFixed(2)} mm`} /></Row>
+      {floor <= 0
+        ? note(`The pocket needs ${(ceiling + cavityDepth).toFixed(2)}mm but the object is only ${thickness}mm thick — it breaks through the other face.`, '#f85149')
+        : thinnerThanMin(floor)
+          ? note(`Only ${floor.toFixed(2)}mm of floor is left; use at least ${minWall}mm or it will crack.`, '#d29922')
+          : null}
+      {ceiling > 0 && (
+        <>
+          {thinnerThanMin(ceiling) && note(`The ${ceiling.toFixed(2)}mm lid has to bridge the whole bore; use at least ${minWall}mm.`, '#d29922')}
+          {note(`Sealed pocket: pause the print at z = ${pauseZ.toFixed(2)}mm to place the ${insert === 'rfid' ? 'tag' : insert}, then resume.`, '#8b949e')}
+        </>
+      )}
+    </Section>
+  )
+}
+
 // ── Document inspector (nothing selected) ────────────────────────────
 
 // ── Corner radii (uniform + per-corner) ──────────────────────────────
@@ -703,6 +842,49 @@ const CornerRadiusEditor: React.FC<{ outline: RoundedRect; applyEdit: ApplyEdit 
             style={{ alignSelf: 'flex-start', background: '#21262d', color: '#8b949e', border: '1px solid #30363d', borderRadius: 4, padding: '2px 8px', fontSize: 11, cursor: 'pointer' }}
           >Reset to uniform</button>
         </div>
+      )}
+    </>
+  )
+}
+
+// ── Color layer (multicolor SVG outline) ─────────────────────────────
+
+type PathOutline = Extract<Outline, { type: 'path' }>
+
+/** Where the artwork's colors live in Z. A depth-limited layer on one face
+ *  leaves the rest of the body in base material, so the other face is a
+ *  clean canvas for text/QR; 'through' colors the whole thickness. */
+const ColorLayerEditor: React.FC<{ outline: PathOutline; thickness: number; applyEdit: ApplyEdit }> =
+  ({ outline, thickness, applyEdit }) => {
+  const side = outline.colorDepth ? (outline.colorFace ?? 'front') : 'through'
+  const depth = outline.colorDepth ?? DEFAULT_COLOR_DEPTH
+
+  const write = (nextSide: typeof side, nextDepth: number) => applyEdit(d => {
+    const o = d.object.outline
+    if (o.type !== 'path') return
+    if (nextSide === 'through') {
+      delete o.colorDepth
+      delete o.colorFace
+      return
+    }
+    // The Core rejects a layer as deep as the body — that IS 'through'.
+    o.colorDepth = clampColorDepth(nextDepth, d.object.thickness) ?? DEFAULT_COLOR_DEPTH
+    if (nextSide === 'front') delete o.colorFace
+    else o.colorFace = nextSide
+  })
+
+  return (
+    <>
+      <Row label="Colors on" hint="Face that shows the artwork. The other face prints solid base material — room for text and QR">
+        <Select value={side}
+          options={[['front', 'Front only'], ['back', 'Back only'], ['both', 'Both faces'], ['through', 'Through (solid colors)']]}
+          onCommit={v => write(v as typeof side, depth)} />
+      </Row>
+      {side !== 'through' && (
+        <Row label="Color depth (mm)" hint="Depth of the colored layer. Under two print layers the base below shows through">
+          <NumInput value={depth} step={0.2} min={0.2} max={Math.max(0.2, thickness / 2)}
+            onCommit={v => write(side, v)} />
+        </Row>
       )}
     </>
   )
@@ -854,7 +1036,7 @@ const DocumentInspector: React.FC<{ doc: DocumentV2; applyEdit: ApplyEdit }> = (
                 <Row label="SVG" hint="SVG artwork stored inside the document">
                   <ReadOnly value={`${Object.keys(outline.colorMap ?? {}).length || 1} color(s), ${outline.svgInline.length} chars`} />
                 </Row>
-                <Row label="Color map" hint="Each SVG color extrudes full-thickness in its material" vertical>
+                <Row label="Color map" hint="Each SVG color prints in its own material" vertical>
                   <ColorMapEditor
                     value={outline.colorMap ?? {}}
                     materials={doc.materials}
@@ -866,6 +1048,7 @@ const DocumentInspector: React.FC<{ doc: DocumentV2; applyEdit: ApplyEdit }> = (
                     })}
                   />
                 </Row>
+                <ColorLayerEditor outline={outline} thickness={doc.object.thickness} applyEdit={applyEdit} />
               </>
             ) : (
               <Row label="SVG path" vertical>
