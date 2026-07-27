@@ -23,5 +23,21 @@ ingress:
     service: http://coolify-proxy:80
   - hostname: cardforge-core-dev.minarai.xyz
     service: http://coolify-proxy:80
+
+  # ── Deploy webhook ────────────────────────────────────────────────────
+  # Coolify's control plane can start containers on this box, so it is NOT
+  # published. Only the one path GitHub posts to is reachable, on its own
+  # hostname; every other path on it 404s before it ever reaches Coolify.
+  # `path` is an unanchored regex, hence the explicit ^…$.
+  #
+  # Note this goes straight to `coolify:8080` (the app container's own nginx),
+  # not through coolify-proxy — Traefik routes the *deployed apps*, and Coolify
+  # itself is not one of them.
+  - hostname: cardforge-hooks.minarai.xyz
+    path: ^/webhooks/source/github/events/manual$
+    service: http://coolify:8080
+  - hostname: cardforge-hooks.minarai.xyz
+    service: http_status:404
+
   # Anything else the tunnel receives → 404.
   - service: http_status:404
