@@ -749,3 +749,27 @@ class TestPocket:
             (20 + 3.1 + 3.3, H - 15 - 3.1 - 0.5, 0))
         assert probe.volume() == pytest.approx(self.PT, rel=1e-3), \
             "an insert needs solid material around it, not a grid of air"
+
+    def test_transform_scale_does_not_resize_the_bore(self):
+        # The bore is measured from a real insert and the depth is z geometry
+        # a 2D transform cannot reach, so honouring scale here would widen the
+        # cavity while leaving it just as deep — an insert that no longer fits,
+        # reported as if it did. The scale is dropped and the trace says so.
+        doc = make_doc(front=[self.pocket(x=20.0, y=15.0)], thickness=self.PT)
+        doc.faces["front"].features[0].transform.scale = 1.5
+        _, trace, vols = volumes_of(doc)
+        removed = RECT_AREA * self.PT - vols["base"].volume()
+        assert removed == pytest.approx(self.bore_volume(6.2, 2.1), rel=0.01)
+        assert any("transform.scale" in w for w in trace.warnings)
+
+    def test_the_record_describes_the_bore_that_was_cut(self):
+        # Everything downstream (constraints, print-pause height, the
+        # Inspector's readout) reads these extras, so they have to be the
+        # geometry that is actually in the mesh.
+        doc = make_doc(front=[self.pocket()], thickness=self.PT)
+        doc.faces["front"].features[0].transform.scale = 2.0
+        _, trace, _ = volumes_of(doc)
+        r = next(r for r in trace.records if r.type == "pocket")
+        assert r.extra["pocket_bore_mm"] == pytest.approx(6.2)
+        assert r.bounds.width == pytest.approx(6.2, rel=1e-3)
+        assert r.bounds.height == pytest.approx(6.2, rel=1e-3)

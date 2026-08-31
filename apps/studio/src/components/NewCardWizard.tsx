@@ -7,6 +7,7 @@
 
 import React, { useState } from 'react'
 import type { Material, Outline } from '../types/cardforge'
+import { DEFAULT_POCKET_CLEARANCE, DEFAULT_POCKET_DEPTH_CLEARANCE } from '../types/cardforge'
 import { useDocumentStore } from '../state/DocumentStore'
 import { useUIStore } from '../state/UIStore'
 import {
@@ -192,7 +193,7 @@ export const NewCardWizard: React.FC = () => {
     if (thickness < need) {
       problems.push(`A ${pocket.label} pocket needs at least ${need}mm of thickness — the card is ${thickness}mm.`)
     }
-    const bore = pocket.diameter + 0.2
+    const bore = pocket.diameter + DEFAULT_POCKET_CLEARANCE
     if (bore + 2 > Math.min(dims.w, dims.h)) {
       problems.push(`A ${pocket.label} pocket is Ø${bore.toFixed(1)}mm and does not fit inside a ${dims.w} × ${dims.h}mm card.`)
     }
@@ -399,7 +400,7 @@ export const NewCardWizard: React.FC = () => {
                 </Row>
                 {pocket && (
                   <div style={{ fontSize: 11, color: '#8b949e', margin: '-2px 0 8px' }}>
-                    Bore Ø{(pocket.diameter + 0.2).toFixed(1)}mm × {(pocket.depth + 0.1).toFixed(1)}mm deep
+                    Bore Ø{(pocket.diameter + DEFAULT_POCKET_CLEARANCE).toFixed(1)}mm × {(pocket.depth + DEFAULT_POCKET_DEPTH_CLEARANCE).toFixed(1)}mm deep
                     (insert + fit clearance) — needs {minThicknessForPocket(pocket)}mm of thickness.
                     Fine-tune the fit in the inspector afterwards.
                   </div>

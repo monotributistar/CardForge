@@ -58,7 +58,10 @@ export interface HoleFeature extends FeatureBase { type: 'hole'; holeType: 'circ
 // the fit is tuned without lying about what goes in it. `ceiling` is the lid
 // left over the pocket, measured from the face: 0 opens it at the surface,
 // anything more buries the insert (the print must pause to drop it in).
-// Like a hole, a pocket owns its own z geometry and ignores `relief`.
+// Like a hole, a pocket owns its own z geometry and ignores `relief`. It
+// ignores `transform.scale` too — the bore is measured from the insert, so
+// scaling it would widen the bore and leave the depth alone. Resize via
+// `diameter` (the canvas offers no scale handle on one).
 export interface PocketFeature extends FeatureBase { type: 'pocket'; pocketType: 'circle'; insert?: 'magnet'|'rfid'|'other'; diameter: number; depth: number; clearance?: number; depthClearance?: number; ceiling?: number }
 export type Feature = TextBlockFeature|TextPatternFeature|PatternFeature|QRFeature|IconFeature|ShapeFeature|HoleFeature|PocketFeature
 

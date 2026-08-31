@@ -4,6 +4,7 @@
 // Screen: top-left origin, px units, zoom applied
 
 import type { Feature, Outline } from '../../types/cardforge'
+import { DEFAULT_POCKET_CLEARANCE } from '../../types/cardforge'
 
 export const PX_PER_MM = 4
 
@@ -70,8 +71,51 @@ export interface BoundsMm { x: number; y: number; w: number; h: number }
  * transform.x/y is treated as the top-left anchor of the box.
  * Text sizes are approximations for editing purposes only — the Core
  * compiles the real geometry.
+ *
+ * transform.scale is part of the box: the kernel's place() scales the
+ * feature-local shape about its top-left anchor and only then translates it,
+ * so the anchor stays put and the box grows right/down. Leaving it out here
+ * is what made a scaled feature draw at its unscaled size while the Core
+ * carved the scaled one.
  */
 export function getFeatureBoundsMm(feature: Feature, cardW: number, cardH: number): BoundsMm {
+  const box = unscaledBoundsMm(feature, cardW, cardH)
+  const s = appliedScale(feature)
+  return { x: box.x, y: box.y, w: box.w * s, h: box.h * s }
+}
+
+/** The scale the Core will actually apply to this feature — 1 where it
+ *  places the shape without the transform's scale. */
+export function appliedScale(feature: Feature): number {
+  // A pocket is sized from a real insert (bore = diameter + clearance) and
+  // its depth is z geometry no 2D scale can touch, so the kernel places it
+  // unscaled — see build_feature_shapes() in kernel/features.py.
+  if (feature.type === 'pocket') return 1
+  // A pattern that fills the outline itself never sees the transform — the
+  // kernel hands it outline_phys directly (same condition as here).
+  if (feature.type === 'pattern' && isFacePattern(feature)) return 1
+  return feature.transform.scale ?? 1
+}
+
+/** Can this feature be resized by dragging a corner handle?
+ *
+ *  False for the features whose size is authored numerically because it
+ *  mirrors a physical part — a pocket's bore comes from the insert it holds
+ *  and a hole's from what passes through it. Both are edited in the
+ *  Inspector, in millimetres; a free-scale gesture on them writes a factor
+ *  the Inspector never shows and, for a pocket, one the Core ignores.
+ */
+export function isScalable(feature: Feature): boolean {
+  return feature.type !== 'pocket' && feature.type !== 'hole'
+}
+
+/** Fills the whole outline rather than a placed box — mirrors the kernel's
+ *  `f.region == "face" or not (f.width and f.height)`. */
+function isFacePattern(feature: Extract<Feature, { type: 'pattern' }>): boolean {
+  return feature.region === 'face' || !(feature.width && feature.height)
+}
+
+function unscaledBoundsMm(feature: Feature, cardW: number, cardH: number): BoundsMm {
   const { x, y } = feature.transform
   switch (feature.type) {
     case 'text-block': {
@@ -87,7 +131,7 @@ export function getFeatureBoundsMm(feature: Feature, cardW: number, cardH: numbe
       return { x, y, w, h: size * 1.4 }
     }
     case 'pattern': {
-      if (feature.region === 'face') return { x: 0, y: 0, w: cardW, h: cardH }
+      if (isFacePattern(feature)) return { x: 0, y: 0, w: cardW, h: cardH }
       return { x, y, w: feature.width ?? 20, h: feature.height ?? 20 }
     }
     case 'qr':
@@ -114,8 +158,10 @@ export function getFeatureBoundsMm(feature: Feature, cardW: number, cardH: numbe
       return { x, y, w: d, h: d }
     }
     case 'pocket': {
-      // The bore, not the insert: what gets cut is what you place.
-      const d = feature.diameter + (feature.clearance ?? 0)
+      // The bore, not the insert: what gets cut is what you place. An
+      // omitted clearance is not zero — it is the Core's default (see
+      // _feature_from_dict in document/schema_v2.py).
+      const d = feature.diameter + (feature.clearance ?? DEFAULT_POCKET_CLEARANCE)
       return { x, y, w: d, h: d }
     }
   }

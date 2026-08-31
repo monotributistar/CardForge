@@ -10,8 +10,8 @@ import type { Feature, Outline, Fill, FaceId } from '../../types/cardforge'
 import { useDocumentStore, getActiveTab, findFeature } from '../../state/DocumentStore'
 import { useCompileStore, mergeIssues } from '../../state/CompileStore'
 import {
-  PX_PER_MM, documentToScreen, screenToDocument, getFeatureBoundsMm, outlineSize,
-  type CanvasViewport, type BoundsMm,
+  PX_PER_MM, documentToScreen, screenToDocument, getFeatureBoundsMm, isScalable,
+  appliedScale, outlineSize, type CanvasViewport, type BoundsMm,
 } from './CanvasCoords'
 import { SelectionHandles } from './handles'
 
@@ -396,6 +396,10 @@ export const InteractiveCanvas: React.FC = () => {
             const color = materialColor(f.material)
             const isCut = f.relief.mode === 'cut'
             const rot = f.transform.rotation ?? 0
+            const scale = appliedScale(f)
+            const glyphBounds = scale === 1
+              ? b
+              : { x: b.x, y: b.y, w: b.w / scale, h: b.h / scale }
             return (
               <g
                 key={f.id}
@@ -404,8 +408,17 @@ export const InteractiveCanvas: React.FC = () => {
               >
                 <title>{`${f.type}: ${f.name ?? f.id}`}</title>
                 <g transform={rot ? `rotate(${rot} ${b.x + b.w / 2} ${b.y + b.h / 2})` : undefined}>
-                  {/* Glyph */}
-                  <FeatureGlyph feature={f} bounds={b} color={color} />
+                  {/* Glyph, drawn at its authored size and then scaled about
+                      the anchor — the same order as the kernel's place(),
+                      which scales the feature-local shape (origin = top-left
+                      anchor) before translating it. Doing it here rather than
+                      inside each glyph means everything the glyph is built
+                      from scales too: a text block's font size, a ring's
+                      stroke, a frame's inset. The chrome below stays at
+                      screen size and uses the already-scaled bounds. */}
+                  <g transform={scale !== 1 ? `translate(${b.x} ${b.y}) scale(${scale}) translate(${-b.x} ${-b.y})` : undefined}>
+                    <FeatureGlyph feature={f} bounds={glyphBounds} color={color} />
+                  </g>
                   {/* Bounding box / cut outline / selection */}
                   <rect
                     x={b.x} y={b.y} width={b.w} height={b.h}
@@ -420,8 +433,11 @@ export const InteractiveCanvas: React.FC = () => {
                     x={b.x + b.w - 0.4} y={b.y + 2} fontSize={2}
                     textAnchor="end" fill="#8b949e" style={{ userSelect: 'none' }}
                   >{RELIEF_BADGES[f.relief.mode] ?? ''}</text>
-                  {/* Backing pad badge */}
-                  {(f.backing?.mode === 'on' || (f.backing?.mode !== 'off' && doc.object.fill?.type === 'lattice')) && (
+                  {/* Backing pad badge. A carve gets no pad — the compiler
+                      requires relief.mode != 'cut' (a pocket over a lattice
+                      gets a solid collar instead, not a plate). */}
+                  {f.relief.mode !== 'cut'
+                    && (f.backing?.mode === 'on' || (f.backing?.mode !== 'off' && doc.object.fill?.type === 'lattice')) && (
                     <text x={b.x + 0.4} y={b.y + 2} fontSize={2} textAnchor="start" fill="#8b949e" style={{ userSelect: 'none' }}>
                       <title>Backing pad</title>▤
                     </text>
@@ -433,6 +449,7 @@ export const InteractiveCanvas: React.FC = () => {
                     <SelectionHandles
                       bounds={b}
                       zoom={viewport.zoom}
+                      scalable={isScalable(f)}
                       onScaleStart={e => handleScaleStart(e, f, b)}
                       onRotateStart={e => handleRotateStart(e, f, b)}
                     />

@@ -2,6 +2,10 @@
 // primary selected feature. Rendered inside the feature's (rotated) group
 // in InteractiveCanvas; sizes are specified in screen px and converted to
 // document mm so they stay a constant on-screen size under zoom.
+//
+// The corner handles are omitted for features the Core places unscaled
+// (`scalable={false}`): dragging them would write a transform.scale nothing
+// downstream honours.
 
 import React from 'react'
 import { PX_PER_MM, type BoundsMm } from './CanvasCoords'
@@ -12,9 +16,10 @@ const ROTATE_LINE_PX = 12 // connector line above the top edge
 export const SelectionHandles: React.FC<{
   bounds: BoundsMm
   zoom: number
+  scalable?: boolean
   onScaleStart: (e: React.PointerEvent) => void
   onRotateStart: (e: React.PointerEvent) => void
-}> = ({ bounds: b, zoom, onScaleStart, onRotateStart }) => {
+}> = ({ bounds: b, zoom, scalable = true, onScaleStart, onRotateStart }) => {
   const pxToMm = (px: number) => px / (PX_PER_MM * zoom)
   const size = pxToMm(HANDLE_PX)
   const r = size / 2
@@ -40,7 +45,7 @@ export const SelectionHandles: React.FC<{
         onPointerDown={onRotateStart}
       />
       {/* Corner scale handles */}
-      {corners.map((c, i) => (
+      {scalable && corners.map((c, i) => (
         <rect
           key={i}
           x={c.x - r} y={c.y - r} width={size} height={size}

@@ -33,6 +33,10 @@ class FeatureShapes:
     shapes: List[Tuple[str, CrossSection]] = field(default_factory=list)
     record: Optional[FeatureRecord] = None
     skip_reason: str = ""
+    # Non-fatal notes about how the feature was built (e.g. a transform the
+    # feature's own geometry overrides). The compiler drains these into the
+    # trace; unlike skip_reason they do not drop the feature.
+    warnings: List[str] = field(default_factory=list)
     # Exclusion region (physical space): lower-priority features must not
     # place geometry here even where this feature has none (QR quiet zone).
     keepout: Optional[CrossSection] = None
@@ -116,6 +120,7 @@ def build_feature_shapes(doc: DocumentV2, face_id: str, feature: Feature,
     rot = -f.transform.rotation  # doc rotation is screen-clockwise; phys is y-up
     scale = f.transform.scale
     extra: Dict[str, Any] = {}
+    feature_warnings: List[str] = []
 
     def placed(local: CrossSection) -> CrossSection:
         return s2.place(local, px, py, rotation_deg=rot, scale=scale)
@@ -290,6 +295,17 @@ def build_feature_shapes(doc: DocumentV2, face_id: str, feature: Feature,
         bore = f.pocket_bore
         if bore <= 0:
             return FeatureShapes(skip_reason="pocket needs a positive diameter")
+        # The pocket owns its size; the transform only places it. A uniform
+        # 2D scale would widen the bore and leave `depth` — z geometry it
+        # cannot reach — alone, turning a cavity measured for a real magnet
+        # or tag into one that no longer holds it, while every readout here
+        # and downstream still quoted the nominal fit. Scale is dropped, and
+        # said out loud.
+        if scale != 1.0:
+            feature_warnings.append(
+                f"transform.scale {scale:g} ignored: a pocket is sized from "
+                f"its insert (Ø{f.diameter:g} + {f.clearance:g} clearance). "
+                "Change the insert diameter to resize it.")
         local = s2.circle(bore)
         extra["pocket_insert"] = f.insert or "magnet"
         extra["pocket_bore_mm"] = bore              # diameter actually cut
@@ -299,7 +315,7 @@ def build_feature_shapes(doc: DocumentV2, face_id: str, feature: Feature,
         extra["pocket_depth_clearance_mm"] = f.depth_clearance
         extra["pocket_nominal_d_mm"] = f.diameter
         extra["pocket_nominal_depth_mm"] = f.depth
-        shapes = [(f.material, placed(local))]
+        shapes = [(f.material, s2.place(local, px, py, rotation_deg=rot))]
 
     else:
         return FeatureShapes(skip_reason=f"unknown feature type '{f.type}'")
@@ -353,4 +369,5 @@ def build_feature_shapes(doc: DocumentV2, face_id: str, feature: Feature,
         area=sum(cs.area() for cs in non_empty),
         extra=extra,
     )
-    return FeatureShapes(shapes=shapes, record=record, keepout=keepout, tab=tab_cs)
+    return FeatureShapes(shapes=shapes, record=record, keepout=keepout,
+                         tab=tab_cs, warnings=feature_warnings)

@@ -387,7 +387,7 @@
             },
             {
               "type": "object",
-              "description": "Blind cavity sized to hold an insert (magnet, RFID/NFC tag). diameter/depth are the insert's nominal size; the cavity cut is (diameter + clearance) x (depth + depthClearance). relief is ignored — the pocket owns its own z geometry.",
+              "description": "Blind cavity sized to hold an insert (magnet, RFID/NFC tag). diameter/depth are the insert's nominal size; the cavity cut is (diameter + clearance) x (depth + depthClearance). relief is ignored — the pocket owns its own z geometry — and so is transform.scale: the bore is measured from the insert, and scaling it would widen the bore while leaving the depth alone. Resize a pocket by changing diameter.",
               "properties": {
                 "type": { "const": "pocket" },
                 "pocketType": { "enum": ["circle"] },

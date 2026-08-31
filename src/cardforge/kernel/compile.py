@@ -149,6 +149,8 @@ def compile_document(doc: DocumentV2, asset_root: Path | str = ".") -> Tuple[Com
                 trace.skipped.append(feature.id)
                 trace.warnings.append(f"{face_id}/{feature.id}: {fs.skip_reason}")
                 continue
+            for note in fs.warnings:
+                trace.warnings.append(f"{face_id}/{feature.id}: {note}")
             trace.records.append(fs.record)
 
             # ── Hole: always a through-cut; optional material tab ─────────
