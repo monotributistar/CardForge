@@ -398,7 +398,8 @@ class DocumentV2:
 
 @lru_cache(maxsize=1)
 def _load_schema() -> Dict[str, Any]:
-    return json.loads(_SCHEMA_PATH.read_text())
+    return json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
+
 
 
 # Params each relief mode accepts. Mode switches in older Studio builds left

@@ -33,7 +33,7 @@ def load_document_stage(ctx: Dict[str, Any]) -> StageResult:
             path = Path(ctx["document_path"])
             if not path.exists():
                 return StageResult.error(f"Document not found: {path}")
-            data = json.loads(path.read_text())
+            data = json.loads(path.read_text(encoding="utf-8"))
 
         version = detect_version(data)
         if version == "1":

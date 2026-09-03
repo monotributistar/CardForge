@@ -52,7 +52,19 @@ def validate(args) -> int:
     return 0
 
 
+def _force_utf8_stdout() -> None:
+    """Windows consoles default to cp1252, which cannot encode the report's
+    box-drawing and status glyphs. Reconfigure rather than strip the output."""
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
+
+
 def main() -> int:
+    _force_utf8_stdout()
     parser = argparse.ArgumentParser(prog="cardforge")
     sub = parser.add_subparsers(dest="command", required=True)
 

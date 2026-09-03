@@ -24,7 +24,7 @@ def load_document_v2(path: str):
     if not p.exists():
         raise DocumentLoadError(f"Document not found: {path}")
     try:
-        data = json.loads(p.read_text())
+        data = json.loads(p.read_text(encoding="utf-8"))
     except json.JSONDecodeError as e:
         raise DocumentLoadError(f"Invalid JSON: {e}") from e
 
