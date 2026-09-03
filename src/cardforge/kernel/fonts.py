@@ -6,6 +6,7 @@ the index, variable fonts instantiated at the requested weight/axes (cached).
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -15,6 +16,10 @@ from fontTools.ttLib import TTFont, TTLibError
 
 FONT_DIRS = [
     Path("assets/fonts"),  # project-relative, checked first
+    # Windows
+    Path(os.environ.get("SystemRoot", "C:/Windows")) / "Fonts",
+    Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "Windows" / "Fonts",
+    # macOS
     Path.home() / "Library" / "Fonts",
     Path("/Library/Fonts"),
     Path("/System/Library/Fonts"),
@@ -27,6 +32,7 @@ FONT_DIRS = [
 ]
 
 FALLBACK_FAMILIES = ["Helvetica Neue", "Arial", "Geneva",
+                     "Segoe UI", "Tahoma",
                      "DejaVu Sans", "Liberation Sans"]
 
 _NAME_FAMILY = 1

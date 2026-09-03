@@ -398,7 +398,13 @@ class DocumentV2:
 
 @lru_cache(maxsize=1)
 def _load_schema() -> Dict[str, Any]:
-    return json.loads(_SCHEMA_PATH.read_text())
+    return json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
+
+
+def load_schema() -> Dict[str, Any]:
+    """The v2 JSON Schema as a dict — public so the API and the MCP server
+    can hand clients the authoritative format instead of a stale copy."""
+    return _load_schema()
 
 
 # Params each relief mode accepts. Mode switches in older Studio builds left

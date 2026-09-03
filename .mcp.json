@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "cardforge": {
+      "command": "uv",
+      "args": ["run", "python", "-m", "cardforge.mcp_server"]
+    }
+  }
+}

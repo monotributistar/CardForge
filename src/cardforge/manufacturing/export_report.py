@@ -18,7 +18,7 @@ def export_report_json(report: ManufacturingReport, output_path: Path) -> Path:
     """
     output_path.parent.mkdir(parents=True, exist_ok=True)
     data = report.to_dict()
-    output_path.write_text(json.dumps(data, indent=2))
+    output_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
     return output_path
 
 
@@ -99,5 +99,5 @@ def export_report_markdown(report: ManufacturingReport, output_path: Path) -> Pa
     lines.append("")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text("\n".join(lines))
+    output_path.write_text("\n".join(lines), encoding="utf-8")
     return output_path

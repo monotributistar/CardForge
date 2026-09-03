@@ -220,4 +220,4 @@ def load_svg_file(path: str) -> str:
     p = P(path)
     if not p.exists():
         raise SVGParseError(f"SVG asset not found: {path}")
-    return p.read_text()
+    return p.read_text(encoding="utf-8")
