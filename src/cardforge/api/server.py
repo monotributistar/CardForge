@@ -34,8 +34,12 @@ from cardforge.service import (
     issues_json,
     load_document,
     materials_json,
+    normalize_document,
     parts_json,
     report_json,
+    safe_id,
+    stl_filename,
+    verdict,
 )
 
 app = FastAPI(title="CardForge Core API", version="2.0.0")
@@ -79,17 +83,14 @@ def api_schema(section: str = "full"):
     section=full      the whole schema
     section=features  the shared feature base plus the per-type branches
     """
-    from cardforge.document.schema_v2 import load_schema
+    from cardforge.document.schema_v2 import feature_schemas, load_schema
 
-    schema = load_schema()
     if section == "features":
-        branches = schema["$defs"]["feature"]["allOf"][1]["oneOf"]
         return {"ok": True, "version": "2.0", "section": "features",
-                "base": schema["$defs"]["featureBase"],
-                "types": {b["properties"]["type"]["const"]: b for b in branches}}
+                **feature_schemas()}
     if section != "full":
         return _error(400, f"Unknown section '{section}' (full|features)")
-    return {"ok": True, "version": "2.0", "section": "full", "schema": schema}
+    return {"ok": True, "version": "2.0", "section": "full", "schema": load_schema()}
 
 
 @app.get("/api/fonts")
@@ -104,20 +105,17 @@ def api_fonts():
 def api_migrate(body: dict):
     """Normalize any document (v1 or v2) to validated v2 — the Studio uses
     this on Open so the editor always works on v2 natively."""
-    from cardforge.document.migrate import detect_version, migrate_v1_to_v2
     from cardforge.document.schema_v2 import DocumentValidationError, validate_v2
 
-    data = body.get("document") or {}
-    version = detect_version(data)
-    if version == "1":
-        data = migrate_v1_to_v2(data)
-    elif version != "2":
-        return _error(400, "Not a CardForge document (v1 or v2)")
+    try:
+        data, migrated = normalize_document(body.get("document") or {})
+    except ValueError as e:
+        return _error(400, str(e))
     try:
         validate_v2(data)
     except DocumentValidationError as e:
         return _error(422, "Document invalid after migration", details=e.errors[:20])
-    return {"ok": True, "document": data, "migrated": version == "1"}
+    return {"ok": True, "document": data, "migrated": migrated}
 
 
 @app.post("/api/compile")
@@ -139,6 +137,8 @@ def api_compile(body: dict):
     return {
         "ok": True,
         "model3mfBase64": base64.b64encode(threemf).decode(),
+        # The one field that unifies the three feedback channels below.
+        "verdict": verdict(issues, report, trace),
         "constraints": issues_json(issues),
         "warnings": trace.warnings,
         "skippedFeatures": trace.skipped,
@@ -185,18 +185,16 @@ def api_export(body: dict):
                 content=scene_to_3mf(scene, doc.materials, title=doc.meta.name),
                 media_type="model/3mf",
                 headers={"Content-Disposition":
-                         f'attachment; filename="{doc.meta.id}.3mf"'})
+                         f'attachment; filename="{safe_id(doc.meta.id)}.3mf"'})
 
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
             if "3mf" in formats:
-                zf.writestr(f"{doc.meta.id}.3mf",
+                zf.writestr(f"{safe_id(doc.meta.id)}.3mf",
                             scene_to_3mf(scene, doc.materials, title=doc.meta.name))
             if "stl" in formats:
                 for mid, data in scene_to_stls(scene, doc.materials).items():
-                    mat = doc.material_by_id(mid)
-                    slot = f"_slot{mat.slot}" if mat and mat.slot else ""
-                    zf.writestr(f"stl/{mid}{slot}.stl", data)
+                    zf.writestr(f"stl/{stl_filename(doc, mid)}", data)
             zf.writestr("manufacturing_report.json",
                         json.dumps(report_json(report), indent=2))
     except Exception as e:

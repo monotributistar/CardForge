@@ -407,6 +407,16 @@ def load_schema() -> Dict[str, Any]:
     return _load_schema()
 
 
+def feature_schemas() -> Dict[str, Any]:
+    """The feature part of the schema, keyed for consumers: the shared base
+    plus one branch per feature type. The only place that knows the schema
+    lays features out as `$defs.feature.allOf[1].oneOf`."""
+    schema = _load_schema()
+    branches = schema["$defs"]["feature"]["allOf"][1]["oneOf"]
+    return {"base": schema["$defs"]["featureBase"],
+            "types": {b["properties"]["type"]["const"]: b for b in branches}}
+
+
 # Params each relief mode accepts. Mode switches in older Studio builds left
 # the previous mode's params behind (e.g. emboss's `height` after switching
 # to deboss), which the strict schema then rejected — documents saved that

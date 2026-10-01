@@ -22,9 +22,9 @@ from cardforge.pipeline.orchestrator import StageResult
 
 def load_document_stage(ctx: Dict[str, Any]) -> StageResult:
     """Load + migrate + validate into a DocumentV2 (variables unresolved)."""
-    from cardforge.document.migrate import detect_version, migrate_v1_to_v2
-    from cardforge.document.schema_v2 import DocumentValidationError
+    from cardforge.document.schema_v2 import DocumentV2, DocumentValidationError
     from cardforge.document.variables import resolve_variables
+    from cardforge.service import normalize_document
 
     try:
         if "document_data" in ctx:
@@ -35,19 +35,16 @@ def load_document_stage(ctx: Dict[str, Any]) -> StageResult:
                 return StageResult.error(f"Document not found: {path}")
             data = json.loads(path.read_text(encoding="utf-8"))
 
-        version = detect_version(data)
-        if version == "1":
-            data = migrate_v1_to_v2(data)
-        elif version != "2":
-            return StageResult.error("Not a CardForge document (v1 or v2)")
+        try:
+            data, migrated = normalize_document(data)
+            resolved = resolve_variables(data)
+        except ValueError as e:
+            return StageResult.error(str(e))
 
-        resolved = resolve_variables(data)
-
-        from cardforge.document.schema_v2 import DocumentV2
         ctx["document"] = DocumentV2.from_dict(resolved)
         ctx["document_raw"] = data  # unresolved, for re-save
         return StageResult.ok(f"Loaded document '{ctx['document'].meta.name}'"
-                              + (" (migrated from v1)" if version == "1" else ""))
+                              + (" (migrated from v1)" if migrated else ""))
     except DocumentValidationError as e:
         return StageResult.error(f"Document invalid: {'; '.join(e.errors[:5])}")
     except json.JSONDecodeError as e:
@@ -122,47 +119,14 @@ def export_stl_stage(ctx: Dict[str, Any]) -> StageResult:
 
 
 def write_outputs_stage(ctx: Dict[str, Any]) -> StageResult:
-    """Persist exports to exports_dir/<doc-id>/ and write the report files.
+    """Persist exports to exports_dir/<doc-id>/ via the shared package writer
+    (see `cardforge.service.write_package` for the layout and the purge)."""
+    from cardforge.service import write_package
 
-    The stl/ subdir and root *.3mf files are wholly owned by this stage, so
-    stale files from earlier runs (renamed materials, old pipeline layouts)
-    are removed first — leftovers would get imported into the slicer
-    alongside the fresh parts.
-    """
-    import shutil
-
-    from cardforge.manufacturing.export_report import (
-        export_report_json, export_report_markdown)
-
-    doc = ctx["document"]
-    out_root = Path(ctx.get("exports_dir", "exports")) / doc.meta.id
-    out_root.mkdir(parents=True, exist_ok=True)
-    shutil.rmtree(out_root / "stl", ignore_errors=True)
-    for stale in out_root.glob("*.3mf"):
-        stale.unlink()
-    written = []
-
-    threemf = ctx.get("threemf_bytes")
-    if threemf:
-        p = out_root / f"{doc.meta.id}.3mf"
-        p.write_bytes(threemf)
-        written.append(p)
-
-    for mid, data in (ctx.get("stl_bytes") or {}).items():
-        mat = doc.material_by_id(mid)
-        slot = f"_slot{mat.slot}" if mat and mat.slot else ""
-        p = out_root / "stl" / f"{mid}{slot}.stl"
-        p.parent.mkdir(exist_ok=True)
-        p.write_bytes(data)
-        written.append(p)
-
-    report = ctx.get("manufacturing_report")
-    if report:
-        reports_dir = out_root / "reports"
-        reports_dir.mkdir(exist_ok=True)
-        written.append(export_report_json(report, reports_dir / "manufacturing.json"))
-        written.append(export_report_markdown(report, reports_dir / "manufacturing.md"))
-
+    written = write_package(
+        Path(ctx.get("exports_dir", "exports")), ctx["document"],
+        ctx.get("threemf_bytes"), ctx.get("stl_bytes"),
+        ctx.get("manufacturing_report"))
     ctx["written_files"] = written
     listing = "\n".join(f"  - {p}" for p in written)
     return StageResult.ok(f"Wrote {len(written)} files:\n{listing}")
