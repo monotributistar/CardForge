@@ -17,8 +17,8 @@ export const TabBar: React.FC = () => {
 
   return (
     <div style={{
-      display: 'flex', alignItems: 'stretch', background: '#0d1117',
-      borderBottom: '1px solid #30363d', overflowX: 'auto', flexShrink: 0, minHeight: 38,
+      display: 'flex', alignItems: 'stretch', background: '#16191D',
+      borderBottom: '1px solid #2A313A', overflowX: 'auto', flexShrink: 0, minHeight: 38,
     }}>
       {tabs.map(tab => {
         const isActive = tab.id === activeTabId
@@ -29,20 +29,20 @@ export const TabBar: React.FC = () => {
             style={{
               display: 'flex', alignItems: 'center', gap: 6, padding: '0 12px',
               cursor: 'pointer', fontSize: 13, whiteSpace: 'nowrap',
-              background: isActive ? '#161b22' : 'transparent',
-              color: isActive ? '#c9d1d9' : '#8b949e',
-              borderRight: '1px solid #21262d',
-              borderTop: isActive ? '2px solid #58a6ff' : '2px solid transparent',
+              background: isActive ? '#1A1E24' : 'transparent',
+              color: isActive ? '#E6E9ED' : '#AEB6C0',
+              borderRight: '1px solid #1E232A',
+              borderTop: isActive ? '2px solid #E8622C' : '2px solid transparent',
             }}
           >
             <span>{tab.doc.meta.name || tab.fileName || 'Untitled'}</span>
-            {tab.dirty && <span style={{ color: '#d29922', fontSize: 10 }}>●</span>}
+            {tab.dirty && <span style={{ color: '#E0A32E', fontSize: 10 }}>●</span>}
             <span
               title="Close"
               onClick={e => { e.stopPropagation(); handleClose(tab.id, tab.dirty, tab.doc.meta.name) }}
-              style={{ color: '#484f58', fontSize: 13, lineHeight: 1, padding: '0 2px', borderRadius: 3 }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#f85149' }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#484f58' }}
+              style={{ color: '#5B6673', fontSize: 13, lineHeight: 1, padding: '0 2px', borderRadius: 3 }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#E04343' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#5B6673' }}
             >×</span>
           </div>
         )
@@ -51,7 +51,7 @@ export const TabBar: React.FC = () => {
         onClick={() => newTab()}
         title="New document"
         style={{
-          background: 'transparent', color: '#8b949e', border: 'none',
+          background: 'transparent', color: '#AEB6C0', border: 'none',
           padding: '0 12px', cursor: 'pointer', fontSize: 15,
         }}
       >+</button>

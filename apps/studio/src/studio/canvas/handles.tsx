@@ -37,10 +37,10 @@ export const SelectionHandles: React.FC<{
   return (
     <g>
       {/* Rotate handle: 12px connector line, then a circle */}
-      <line x1={cx} y1={b.y} x2={cx} y2={b.y - line} stroke="#58a6ff" strokeWidth={stroke} />
+      <line x1={cx} y1={b.y} x2={cx} y2={b.y - line} stroke="#E8622C" strokeWidth={stroke} />
       <circle
         cx={cx} cy={b.y - line - r} r={r}
-        fill="#58a6ff" stroke="#fff" strokeWidth={stroke}
+        fill="#E8622C" stroke="#fff" strokeWidth={stroke}
         style={{ cursor: 'grab' }}
         onPointerDown={onRotateStart}
       />
@@ -49,7 +49,7 @@ export const SelectionHandles: React.FC<{
         <rect
           key={i}
           x={c.x - r} y={c.y - r} width={size} height={size}
-          fill="#58a6ff" stroke="#fff" strokeWidth={stroke}
+          fill="#E8622C" stroke="#fff" strokeWidth={stroke}
           style={{ cursor: c.cursor }}
           onPointerDown={onScaleStart}
         />

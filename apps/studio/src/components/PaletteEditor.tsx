@@ -82,7 +82,7 @@ export const PaletteEditor: React.FC<{
   return (
     <div>
       {/* Curated starting points */}
-      <div style={{ fontSize: 11, color: '#8b949e', marginBottom: 6 }}>
+      <div style={{ fontSize: 11, color: '#AEB6C0', marginBottom: 6 }}>
         Start from a combination, then adjust. The first colour is the card body.
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
@@ -98,17 +98,17 @@ export const PaletteEditor: React.FC<{
               className="cf-btn"
               style={{
                 display: 'flex', alignItems: 'center', gap: 6, padding: '4px 8px 4px 5px',
-                background: active ? 'rgba(88,166,255,0.12)' : '#0d1117',
-                border: `1px solid ${active ? '#1f6feb' : '#30363d'}`,
+                background: active ? 'rgba(88,166,255,0.12)' : '#16191D',
+                border: `1px solid ${active ? '#C24A1C' : '#2A313A'}`,
                 borderRadius: 20, cursor: 'pointer', fontSize: 11,
-                color: active ? '#58a6ff' : '#c9d1d9',
+                color: active ? '#E8622C' : '#E6E9ED',
               }}
             >
               <span style={{ display: 'flex' }}>
                 {p.entries.map((e, i) => (
                   <span key={i} style={{
                     width: 13, height: 13, borderRadius: '50%', background: e.color,
-                    border: '1px solid #30363d', marginLeft: i ? -4 : 0,
+                    border: '1px solid #2A313A', marginLeft: i ? -4 : 0,
                   }} />
                 ))}
               </span>
@@ -121,7 +121,7 @@ export const PaletteEditor: React.FC<{
       {/* Rows */}
       {materials.map((m, i) => (
         <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 7, minHeight: CONTROL_H }}>
-          <span style={{ width: 16, fontSize: 10, color: '#484f58', flexShrink: 0, textAlign: 'right' }}
+          <span style={{ width: 16, fontSize: 10, color: '#5B6673', flexShrink: 0, textAlign: 'right' }}
             title="Printer filament slot (AMS/CFS)">{i + 1}</span>
           <ColorPicker
             color={m.color}
@@ -137,7 +137,7 @@ export const PaletteEditor: React.FC<{
             title="Body = the card itself. The rest are what text, logos and QR print in."
             onChange={e => update(i, { role: e.target.value as Material['role'] })}
             style={{
-              background: '#0d1117', color: '#c9d1d9', border: '1px solid #30363d',
+              background: '#16191D', color: '#E6E9ED', border: '1px solid #2A313A',
               borderRadius: 4, padding: '4px 6px', fontSize: FONT_SIZE, height: CONTROL_H,
               width: 84, flexShrink: 0, cursor: 'pointer',
             }}
@@ -163,7 +163,7 @@ export const PaletteEditor: React.FC<{
           style={{ padding: '5px 10px', minHeight: 28, fontSize: 12 }}>
           + Add filament
         </Btn>
-        <span style={{ fontSize: 11, color: '#484f58' }}>
+        <span style={{ fontSize: 11, color: '#5B6673' }}>
           {materials.length} of {MAX_WIZARD_MATERIALS} slots
           {materials.length >= MAX_WIZARD_MATERIALS ? ' — full' : ''}
         </span>
@@ -174,7 +174,7 @@ export const PaletteEditor: React.FC<{
           marginTop: 12, padding: '8px 10px', borderRadius: 6, fontSize: 11, lineHeight: 1.5,
           background: worst.v.level === 'bad' ? 'rgba(248,81,73,0.08)' : 'rgba(210,153,34,0.08)',
           border: `1px solid ${worst.v.level === 'bad' ? 'rgba(248,81,73,0.4)' : 'rgba(210,153,34,0.4)'}`,
-          color: worst.v.level === 'bad' ? '#f85149' : '#d29922',
+          color: worst.v.level === 'bad' ? '#E04343' : '#E0A32E',
         }}>
           <b>{filamentName(worst.m.color) ?? worst.m.name}</b> against the body is {worst.v.text}.{' '}
           {worst.v.level === 'bad'

@@ -233,9 +233,12 @@ export interface WizardOptions {
   pocket?: WizardPocket | null
   /** Add a starter 6mm name text-block on the front. */
   sampleText: boolean
+  /** Optional second line under the name (role, company…) — only drawn when
+   *  there is room and `sampleText` is on. */
+  subtitle?: string
   /** Starter content on the back (bed-facing) face — flush inlays, the only
-   *  thing that face can carry besides carving. Used when the front is taken
-   *  by an SVG logo and the back is the writable side. */
+   *  thing that face can carry besides carving. Used for card-like templates
+   *  (business, badge, NFC) and when an SVG logo takes the front. */
   backStarter?: 'none' | 'text-qr'
 }
 
@@ -308,15 +311,28 @@ export function buildWizardDocument(o: WizardOptions): DocumentV2 {
   }
 
   if (o.sampleText) {
+    const nameX = Math.max(6, W * 0.1)
+    const hasSubtitle = !!o.subtitle && H >= 34 // room for a second line
+    const nameY = hasSubtitle ? Math.max(4, H / 2 - 7) : Math.max(4, H / 2 - 4)
     const text: TextBlockFeature = {
       id: uid('text-block'), type: 'text-block', name: 'Name',
-      transform: { x: Math.max(6, W * 0.1), y: Math.max(4, H / 2 - 4) },
+      transform: { x: nameX, y: nameY },
       material: inkId, relief: { mode: 'emboss', height: 0.4 },
-      lines: ['Your Name'],
+      lines: ['Tu Nombre'],
       font: { family: 'Helvetica Neue', size: 6, weight: 700 },
       align: 'left',
     }
     front.push(text)
+    if (hasSubtitle) {
+      front.push({
+        id: uid('text-block'), type: 'text-block', name: 'Subtitle',
+        transform: { x: nameX, y: nameY + 7 },
+        material: inkId, relief: { mode: 'emboss', height: 0.3 },
+        lines: [o.subtitle!],
+        font: { family: 'Helvetica Neue', size: 3.2 },
+        align: 'left',
+      })
+    }
   }
 
   // Back = bed-facing: flush inlays only, and its content is authored in

@@ -92,7 +92,7 @@ const App: React.FC = () => {
   }, [])
 
   return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#0d1117', color: '#c9d1d9' }}>
+    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#16191D', color: '#E6E9ED' }}>
       <MenuBar />
       <TabBar />
       <EditorLayout />

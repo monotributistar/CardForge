@@ -70,7 +70,7 @@ export const InteractiveCanvas: React.FC = () => {
   const objectSelected = tab?.objectSelected ?? false
 
   const materialColor = useCallback((id: string): string =>
-    doc?.materials.find(m => m.id === id)?.color ?? '#8b949e', [doc])
+    doc?.materials.find(m => m.id === id)?.color ?? '#AEB6C0', [doc])
 
   const clientToDoc = useCallback((clientX: number, clientY: number, clamp = true) => {
     const el = containerRef.current
@@ -291,7 +291,7 @@ export const InteractiveCanvas: React.FC = () => {
 
   if (!doc) {
     return (
-      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#484f58', fontSize: 13 }}>
+      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#5B6673', fontSize: 13 }}>
         No document open
       </div>
     )
@@ -308,18 +308,18 @@ export const InteractiveCanvas: React.FC = () => {
   return (
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
       {/* Controls */}
-      <div style={{ padding: '6px 8px', display: 'flex', gap: 6, justifyContent: 'center', alignItems: 'center', borderBottom: '1px solid #21262d', flexShrink: 0 }}>
+      <div style={{ padding: '6px 8px', display: 'flex', gap: 6, justifyContent: 'center', alignItems: 'center', borderBottom: '1px solid #1E232A', flexShrink: 0 }}>
         <Btn active={activeFace === 'front'} onClick={() => setActiveFace('front')}>Front</Btn>
         <Btn active={activeFace === 'back'} onClick={() => setActiveFace('back')}>Back</Btn>
         <span style={{ width: 12 }} />
         <Btn onClick={() => zoomBy(1 / 1.25)}>−</Btn>
-        <span style={{ fontSize: 11, color: '#8b949e', minWidth: 38, textAlign: 'center' }}>{Math.round(viewport.zoom * 100)}%</span>
+        <span style={{ fontSize: 11, color: '#AEB6C0', minWidth: 38, textAlign: 'center' }}>{Math.round(viewport.zoom * 100)}%</span>
         <Btn onClick={() => zoomBy(1.25)}>+</Btn>
         <Btn onClick={resetView}>Reset</Btn>
         {selectedIds.length >= 2 && (
           <>
-            <span style={{ width: 1, height: 16, background: '#30363d', margin: '0 4px' }} />
-            <span style={{ fontSize: 10, color: '#484f58' }}>Align</span>
+            <span style={{ width: 1, height: 16, background: '#2A313A', margin: '0 4px' }} />
+            <span style={{ fontSize: 10, color: '#5B6673' }}>Align</span>
             <Btn title="Alinear izquierdas (al primario)" onClick={() => alignSelection('left')}>⇤</Btn>
             <Btn title="Centrar en X (al primario)" onClick={() => alignSelection('centerX')}>⇹</Btn>
             <Btn title="Alinear derechas (al primario)" onClick={() => alignSelection('right')}>⇥</Btn>
@@ -333,7 +333,7 @@ export const InteractiveCanvas: React.FC = () => {
       {/* Canvas area */}
       <div
         ref={containerRef}
-        style={{ flex: 1, position: 'relative', overflow: 'hidden', cursor: dragRef.current ? 'grabbing' : 'default', background: '#0d1117' }}
+        style={{ flex: 1, position: 'relative', overflow: 'hidden', cursor: dragRef.current ? 'grabbing' : 'default', background: '#16191D' }}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerDown={handleBackgroundPointerDown}
@@ -373,18 +373,18 @@ export const InteractiveCanvas: React.FC = () => {
           <rect
             x={1} y={1} width={cardW - 2} height={cardH - 2}
             rx={doc.object.outline.type === 'rounded-rect' ? Math.max(0, doc.object.outline.radius - 1) : 0}
-            fill="none" stroke="#30363d" strokeWidth={0.2} strokeDasharray="1.5 1.5"
+            fill="none" stroke="#2A313A" strokeWidth={0.2} strokeDasharray="1.5 1.5"
             pointerEvents="none"
           />
 
           {/* Alignment guides while dragging */}
           {guides.v.map(x => (
             <line key={`gv-${x}`} x1={x} y1={-2} x2={x} y2={cardH + 2}
-              stroke="#e3b341" strokeWidth={0.25} strokeDasharray="1 0.8" pointerEvents="none" />
+              stroke="#E0A32E" strokeWidth={0.25} strokeDasharray="1 0.8" pointerEvents="none" />
           ))}
           {guides.h.map(y => (
             <line key={`gh-${y}`} x1={-2} y1={y} x2={cardW + 2} y2={y}
-              stroke="#e3b341" strokeWidth={0.25} strokeDasharray="1 0.8" pointerEvents="none" />
+              stroke="#E0A32E" strokeWidth={0.25} strokeDasharray="1 0.8" pointerEvents="none" />
           ))}
 
           {/* Features */}
@@ -423,7 +423,7 @@ export const InteractiveCanvas: React.FC = () => {
                   <rect
                     x={b.x} y={b.y} width={b.w} height={b.h}
                     fill={isSel ? 'rgba(88,166,255,0.08)' : 'transparent'}
-                    stroke={isCut ? '#f85149' : isSel ? '#58a6ff' : '#30363d'}
+                    stroke={isCut ? '#E04343' : isSel ? '#E8622C' : '#2A313A'}
                     strokeWidth={isSel ? 2 : 1}
                     strokeDasharray={isCut ? '1.2 0.8' : undefined}
                     vectorEffect="non-scaling-stroke"
@@ -431,19 +431,19 @@ export const InteractiveCanvas: React.FC = () => {
                   {/* Relief badge (corner) */}
                   <text
                     x={b.x + b.w - 0.4} y={b.y + 2} fontSize={2}
-                    textAnchor="end" fill="#8b949e" style={{ userSelect: 'none' }}
+                    textAnchor="end" fill="#AEB6C0" style={{ userSelect: 'none' }}
                   >{RELIEF_BADGES[f.relief.mode] ?? ''}</text>
                   {/* Backing pad badge. A carve gets no pad — the compiler
                       requires relief.mode != 'cut' (a pocket over a lattice
                       gets a solid collar instead, not a plate). */}
                   {f.relief.mode !== 'cut'
                     && (f.backing?.mode === 'on' || (f.backing?.mode !== 'off' && doc.object.fill?.type === 'lattice')) && (
-                    <text x={b.x + 0.4} y={b.y + 2} fontSize={2} textAnchor="start" fill="#8b949e" style={{ userSelect: 'none' }}>
+                    <text x={b.x + 0.4} y={b.y + 2} fontSize={2} textAnchor="start" fill="#AEB6C0" style={{ userSelect: 'none' }}>
                       <title>Backing pad</title>▤
                     </text>
                   )}
                   {/* Material chip (8px at 100%) */}
-                  <rect x={b.x} y={b.y + b.h + 0.5} width={2} height={2} fill={color} stroke="#30363d" strokeWidth={0.1} />
+                  <rect x={b.x} y={b.y + b.h + 0.5} width={2} height={2} fill={color} stroke="#2A313A" strokeWidth={0.1} />
                   {/* Scale / rotate handles on the primary selection */}
                   {f.id === primaryId && (
                     <SelectionHandles
@@ -457,7 +457,7 @@ export const InteractiveCanvas: React.FC = () => {
                 </g>
                 {/* Constraint badge */}
                 {issues.length > 0 && (
-                  <circle cx={b.x - 0.5} cy={b.y - 0.5} r={1.2} fill={hasError ? '#f85149' : '#d29922'} stroke="#0d1117" strokeWidth={0.3}>
+                  <circle cx={b.x - 0.5} cy={b.y - 0.5} r={1.2} fill={hasError ? '#E04343' : '#E0A32E'} stroke="#16191D" strokeWidth={0.3}>
                     <title>{issues.map(i => i.message).join('\n')}</title>
                   </circle>
                 )}
@@ -498,7 +498,7 @@ const LatticeHintPattern: React.FC<{ fill: Fill | undefined }> = ({ fill }) => {
   if (fill?.type !== 'lattice') return null
   const s = Math.max(1, fill.spacing)
   const lw = fill.lineWidth ?? 1.2
-  const stroke = '#8b949e'
+  const stroke = '#AEB6C0'
   const content = fill.pattern === 'dots'
     ? <circle cx={s / 2} cy={s / 2} r={Math.max(0.3, lw / 2)} fill={stroke} />
     : fill.pattern === 'lines'
@@ -535,9 +535,9 @@ const ObjectOutline: React.FC<{
   outline: Outline; fill: Fill | undefined; selected: boolean
   artworkColors: boolean; baseColor: string
 }> = ({ outline, fill, selected, artworkColors, baseColor }) => {
-  const stroke = selected ? '#58a6ff' : '#484f58'
+  const stroke = selected ? '#E8622C' : '#5B6673'
   const strokeWidth = selected ? 0.6 : 0.3
-  const common = { fill: '#161b22', stroke, strokeWidth }
+  const common = { fill: '#1A1E24', stroke, strokeWidth }
   const isLattice = fill?.type === 'lattice'
   const hint = isLattice ? `url(#${LATTICE_HINT_ID})` : undefined
 
@@ -600,7 +600,7 @@ const ObjectOutline: React.FC<{
     }
     return (
       <g>
-        <rect x={0} y={0} width={outline.width} height={outline.height} fill="none" stroke="#30363d" strokeWidth={0.15} strokeDasharray="1 1" />
+        <rect x={0} y={0} width={outline.width} height={outline.height} fill="none" stroke="#2A313A" strokeWidth={0.15} strokeDasharray="1 1" />
         <path d={outline.svgPath} {...common} />
         {isLattice && <path d={outline.svgPath} fill={hint} stroke="none" />}
       </g>
@@ -688,7 +688,7 @@ const FeatureGlyph: React.FC<{ feature: Feature; bounds: BoundsMm; color: string
             style={{ userSelect: 'none' }}
           >{feature.lines[0] ?? ''}</text>
           {feature.lines.length > 1 && (
-            <text x={b.x} y={b.y + b.h - 0.5} fontSize={1.8} fill="#8b949e" style={{ userSelect: 'none' }}>
+            <text x={b.x} y={b.y + b.h - 0.5} fontSize={1.8} fill="#AEB6C0" style={{ userSelect: 'none' }}>
               +{feature.lines.length - 1} line{feature.lines.length > 2 ? 's' : ''}
             </text>
           )}
@@ -727,7 +727,7 @@ const FeatureGlyph: React.FC<{ feature: Feature; bounds: BoundsMm; color: string
       return (
         <g>
           <text x={b.x + b.w / 2} y={b.y + b.h / 2 + 1} fontSize={Math.min(b.w, b.h) * 0.5} textAnchor="middle" style={{ userSelect: 'none' }}>🖼</text>
-          <text x={b.x + b.w / 2} y={b.y + b.h - 0.5} fontSize={1.8} textAnchor="middle" fill="#8b949e" style={{ userSelect: 'none' }}>
+          <text x={b.x + b.w / 2} y={b.y + b.h - 0.5} fontSize={1.8} textAnchor="middle" fill="#AEB6C0" style={{ userSelect: 'none' }}>
             {feature.name ?? feature.svgAsset ?? 'icon'}
           </text>
         </g>
@@ -839,7 +839,7 @@ const ShapeGlyph: React.FC<{ feature: Extract<Feature, { type: 'shape' }>; bound
 const Btn: React.FC<{ active?: boolean; onClick: () => void; children: React.ReactNode; title?: string }> =
   ({ active, onClick, children, title }) => (
     <button onClick={onClick} title={title} style={{
-      background: active ? '#1f6feb' : '#21262d', color: active ? '#fff' : '#8b949e',
-      border: '1px solid #30363d', padding: '2px 10px', borderRadius: 4, cursor: 'pointer', fontSize: 11,
+      background: active ? '#C24A1C' : '#1E232A', color: active ? '#fff' : '#AEB6C0',
+      border: '1px solid #2A313A', padding: '2px 10px', borderRadius: 4, cursor: 'pointer', fontSize: 11,
     }}>{children}</button>
   )

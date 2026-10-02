@@ -6,10 +6,58 @@
 
 import type { DocumentV2 } from '../../types/cardforge'
 
-// Core API endpoint — override per environment at build time
-// (e.g. VITE_CORE_URL=https://cardforge-core.minarai.xyz for the public build).
-export const CORE_BASE_URL: string =
+// Core (compile engine) endpoint.
+//
+// The URL resolves in two layers so the Studio is usable without touching a
+// build config: a runtime override the user can set in-app (persisted in
+// localStorage) wins; otherwise the build-time default (VITE_CORE_URL, baked
+// in for the hosted build) applies. The 2D editor, validation and quick fixes
+// never need the engine — only compiling the 3D geometry and exporting do —
+// so a missing engine is an *optional* feature being off, not a broken app.
+
+const CORE_URL_KEY = 'cardforge.core.url'
+
+/** Build-time default endpoint (hosted build bakes in VITE_CORE_URL). */
+export const DEFAULT_CORE_URL: string =
   import.meta.env.VITE_CORE_URL ?? 'http://localhost:9000'
+
+function normalizeUrl(raw: string | null | undefined): string {
+  const v = (raw ?? '').trim().replace(/\/+$/, '')
+  return v || DEFAULT_CORE_URL
+}
+
+function readStoredUrl(): string {
+  try {
+    return normalizeUrl(localStorage.getItem(CORE_URL_KEY))
+  } catch {
+    return DEFAULT_CORE_URL
+  }
+}
+
+let _baseUrl = readStoredUrl()
+
+/** The engine endpoint currently in effect (runtime override or default). */
+export function getCoreBaseUrl(): string {
+  return _baseUrl
+}
+
+/**
+ * Set and persist the engine endpoint. An empty value resets to the default.
+ * Returns the effective URL after normalization.
+ */
+export function setCoreBaseUrl(raw: string): string {
+  _baseUrl = normalizeUrl(raw)
+  try {
+    if (_baseUrl === DEFAULT_CORE_URL) localStorage.removeItem(CORE_URL_KEY)
+    else localStorage.setItem(CORE_URL_KEY, _baseUrl)
+  } catch {
+    /* storage unavailable — override stays in memory for the session */
+  }
+  // A different engine can advertise different fonts — drop the cache.
+  _fontsCache = null
+  _fontsPromise = null
+  return _baseUrl
+}
 
 // ── Response types ───────────────────────────────────────────────────
 
@@ -89,10 +137,10 @@ export class CoreApiError extends Error {
   }
 }
 
-/** Thrown when the API cannot be reached at all (server not running). */
+/** Thrown when the engine cannot be reached at all (server not running). */
 export class CoreUnreachableError extends Error {
   constructor() {
-    super(`Core API unreachable at ${CORE_BASE_URL} — run \`pnpm core:api\``)
+    super(`No se pudo conectar con el motor en ${getCoreBaseUrl()}`)
     this.name = 'CoreUnreachableError'
   }
 }
@@ -101,7 +149,7 @@ export class CoreUnreachableError extends Error {
 
 async function postJson(path: string, body: unknown): Promise<Response> {
   try {
-    return await fetch(`${CORE_BASE_URL}${path}`, {
+    return await fetch(`${getCoreBaseUrl()}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -152,7 +200,7 @@ export async function exportDocument(
 /** GET /api/health — true when the Core API is up. */
 export async function checkHealth(): Promise<boolean> {
   try {
-    const res = await fetch(`${CORE_BASE_URL}/api/health`)
+    const res = await fetch(`${getCoreBaseUrl()}/api/health`)
     if (!res.ok) return false
     const data = await res.json()
     return data?.ok === true
@@ -172,7 +220,7 @@ export async function listFonts(): Promise<FontInfo[]> {
   if (!_fontsPromise) {
     _fontsPromise = (async () => {
       try {
-        const res = await fetch(`${CORE_BASE_URL}/api/fonts`)
+        const res = await fetch(`${getCoreBaseUrl()}/api/fonts`)
         if (!res.ok) return []
         const data = await res.json()
         _fontsCache = (data?.fonts ?? []) as FontInfo[]
