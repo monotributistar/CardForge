@@ -7,11 +7,12 @@
 
 import React, { useEffect, useState } from 'react'
 import { useDocumentStore, getActiveTab } from '../state/DocumentStore'
-import { useCompileStore, recompileActive, mergeIssues } from '../state/CompileStore'
+import { useCompileStore, recompileActive } from '../state/CompileStore'
 import { useUIStore } from '../state/UIStore'
 import { FeatureTree } from './FeatureTree'
 import { MaterialPalette } from './MaterialPalette'
 import { IssuesList } from './IssuesPanel'
+import { VerdictBadge, useVerdict } from './VerdictBadge'
 import { InteractiveCanvas } from '../studio/canvas/InteractiveCanvas'
 import { CompiledViewer } from '../studio/canvas/CompiledViewer'
 import { Inspector } from '../studio/inspector/Inspector'
@@ -142,66 +143,59 @@ export const EditorLayout: React.FC = () => {
 
 // ── Status bar ───────────────────────────────────────────────────────
 
-const STATUS_COLORS: Record<string, string> = {
-  idle: '#5B6673',
-  compiling: '#E0A32E',
-  ok: '#1F9D63',
-  error: '#E04343',
-}
-
 const StatusBar: React.FC = () => {
   const status = useCompileStore(s => s.status)
   const error = useCompileStore(s => s.error)
   const manufacturing = useCompileStore(s => s.manufacturing)
-  const constraints = useCompileStore(s => s.constraints)
   const stats = useCompileStore(s => s.stats)
   const issuesOpen = useUIStore(s => s.issuesOpen)
   const toggleIssues = useUIStore(s => s.toggleIssues)
 
-  const issues = mergeIssues({ constraints, manufacturing })
-  const errorCount = issues.filter(i => i.severity === 'error').length
-  const warningCount = issues.filter(i => i.severity === 'warning').length
+  const verdict = useVerdict()
+  const errorCount = verdict.blockers.length
+  const warningCount = verdict.warnings.length
 
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: 14, padding: '4px 12px',
-      background: '#1A1E24', borderTop: '1px solid #2A313A', fontSize: 11, color: '#AEB6C0', flexShrink: 0, minHeight: 28,
+      display: 'flex', alignItems: 'center', gap: 12, padding: '4px 12px',
+      background: '#1A1E24', borderTop: '1px solid #2A313A', fontSize: 11, color: '#AEB6C0', flexShrink: 0, minHeight: 32,
     }}>
-      <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-        <span style={{ width: 8, height: 8, borderRadius: '50%', background: STATUS_COLORS[status] }} />
-        {status === 'idle' ? 'Idle' : status === 'compiling' ? 'Compiling…' : status === 'ok' ? 'Compiled' : 'Error'}
-      </span>
+      {/* Unified verdict — the one answer every surface shares. */}
+      <VerdictBadge verdict={verdict} />
+
       {status === 'error' && error && (
         <>
-          <span style={{ color: '#E04343', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 420 }} title={error}>{error}</span>
+          <span style={{ color: '#E04343', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 380 }} title={error}>{error}</span>
           <button
             onClick={recompileActive}
             style={{ background: '#1E232A', color: '#E6E9ED', border: '1px solid #2A313A', borderRadius: 4, padding: '2px 8px', fontSize: 10, cursor: 'pointer' }}
-          >Retry</button>
+          >Reintentar</button>
         </>
       )}
-      {manufacturing && (
-        <span title={manufacturing.isManufacturable ? 'Manufacturable' : 'Not manufacturable'}>
-          Score: <span style={{ color: manufacturing.isManufacturable ? '#1F9D63' : '#E04343' }}>
-            {manufacturing.score} ({manufacturing.scoreLabel})
-          </span>
-        </span>
-      )}
+
       <button
         onClick={toggleIssues}
-        title={issuesOpen ? 'Hide the issues list' : 'Show every compile warning and error'}
+        title={issuesOpen ? 'Ocultar la lista de avisos' : 'Ver cada aviso y error de fabricación'}
         style={{
           background: issuesOpen ? '#1E232A' : 'transparent', color: '#AEB6C0',
           border: '1px solid #2A313A', borderRadius: 4, padding: '3px 10px', fontSize: 11, cursor: 'pointer',
           display: 'flex', alignItems: 'center', gap: 6,
         }}
       >
-        <span>{issuesOpen ? '▾' : '▴'} Issues</span>
+        <span>{issuesOpen ? '▾' : '▴'} Revisar</span>
         {errorCount > 0 && <span style={{ color: '#E04343' }}>{errorCount}</span>}
         {warningCount > 0 && <span style={{ color: '#E0A32E' }}>{warningCount}</span>}
         {errorCount === 0 && warningCount === 0 && <span style={{ color: '#1F9D63' }}>✓</span>}
       </button>
+
       <span style={{ flex: 1 }} />
+
+      {/* Analyzer score — secondary detail only; the verdict is the headline. */}
+      {manufacturing && (
+        <span style={{ color: '#5B6673' }} title="Puntaje del analizador de fabricabilidad (solo ve sus propias reglas)">
+          Análisis {manufacturing.score}
+        </span>
+      )}
       {stats && (
         <span style={{ color: '#5B6673' }}>
           {stats.featureCount} features · {stats.compileMs} ms · {(stats.threeMfBytes / 1024).toFixed(1)} KB 3MF

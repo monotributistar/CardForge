@@ -79,6 +79,69 @@ export function allIssues(): UnifiedIssue[] {
   return mergeIssues(useCompileStore.getState())
 }
 
+// ── Unified manufacturability verdict ────────────────────────────────
+// One green/amber/red answer that every surface (status bar, issues drawer)
+// shares — folding together the three feedback channels that could
+// otherwise disagree:
+//   · geometry constraints (errors block)
+//   · manufacturing analyzer (its score only sees its own rules)
+//   · skipped features (a feature asked for and silently dropped)
+// A skipped feature ALWAYS blocks: asking for something and not getting it
+// is a failure even when every rule the analyzer knows is satisfied. This is
+// why a card can read "score 100" and still not be printable — the verdict
+// is the number that doesn't lie.
+
+export type VerdictLevel = 'ok' | 'warn' | 'blocked' | 'pending' | 'none'
+
+export interface Verdict {
+  level: VerdictLevel
+  /** Short label, Spanish. */
+  label: string
+  /** Everything that stops the piece from printing. */
+  blockers: UnifiedIssue[]
+  /** Non-blocking advisories. */
+  warnings: UnifiedIssue[]
+}
+
+/** A dropped feature is reported as a warning with this code — but it blocks. */
+const SKIPPED_CODE = 'feature-skipped'
+
+/** Fold the compile state into a single manufacturability verdict. */
+export function computeVerdict(
+  state: Pick<CompileStoreState, 'status' | 'constraints' | 'manufacturing' | 'error'>,
+): Verdict {
+  const issues = mergeIssues(state)
+  const blockers = issues.filter(i => i.severity === 'error' || i.code === SKIPPED_CODE)
+  const warnings = issues.filter(i => i.severity === 'warning' && i.code !== SKIPPED_CODE)
+
+  if (state.status === 'compiling') {
+    return { level: 'pending', label: 'Analizando…', blockers, warnings }
+  }
+  if (blockers.length > 0) {
+    return { level: 'blocked', label: 'No imprime', blockers, warnings }
+  }
+  if (state.status === 'error') {
+    // Compile could not complete (e.g. Core unreachable) — can't confirm.
+    return { level: 'none', label: 'Sin verificar', blockers, warnings }
+  }
+  if (state.status !== 'ok') {
+    return { level: 'none', label: 'Sin compilar', blockers, warnings }
+  }
+  if (warnings.length > 0) {
+    return { level: 'warn', label: 'Con avisos', blockers, warnings }
+  }
+  return { level: 'ok', label: 'Imprimible', blockers, warnings }
+}
+
+/** Palette for a verdict level — single source of truth for its colour. */
+export const VERDICT_COLORS: Record<VerdictLevel, string> = {
+  ok: '#1F9D63',
+  warn: '#E0A32E',
+  blocked: '#E04343',
+  pending: '#E0A32E',
+  none: '#5B6673',
+}
+
 // ── Compile pipeline ─────────────────────────────────────────────────
 
 const DEBOUNCE_MS = 400

@@ -32,6 +32,10 @@ interface Preset {
   hole: WizardOptions['hole']
   holeTab: boolean
   pocket?: string
+  /** Seed a QR + caption on the back (card-like templates). */
+  backStarter?: boolean
+  /** Second line under the name on the front. */
+  subtitle?: string
 }
 
 const PRESETS: Preset[] = [
@@ -40,6 +44,7 @@ const PRESETS: Preset[] = [
     desc: '85 × 54 mm — the classic pocket card',
     outline: { type: 'rounded-rect', width: 85, height: 54, radius: 4 },
     thickness: 1.8, hole: 'none', holeTab: false,
+    backStarter: true, subtitle: 'Cargo · Empresa',
   },
   {
     key: 'keychain', icon: '🔑', label: 'Keychain tag',
@@ -52,6 +57,7 @@ const PRESETS: Preset[] = [
     desc: '86 × 54 mm with a lanyard slot on top',
     outline: { type: 'rounded-rect', width: 86, height: 54, radius: 3 },
     thickness: 1.6, hole: 'lanyard', holeTab: false,
+    backStarter: true, subtitle: 'Rol · Organización',
   },
   {
     key: 'round', icon: '⭕', label: 'Round tag',
@@ -70,6 +76,7 @@ const PRESETS: Preset[] = [
     desc: '85 × 54 mm with a pocket for a Ø25 NFC tag',
     outline: { type: 'rounded-rect', width: 85, height: 54, radius: 4 },
     thickness: 2.4, hole: 'none', holeTab: false, pocket: 'rfid25',
+    backStarter: true, subtitle: 'Tocá para conectar',
   },
   {
     key: 'svg', icon: '🎨', label: 'SVG logo shape',
@@ -163,7 +170,10 @@ export const NewCardWizard: React.FC = () => {
     const doc = buildWizardDocument({
       name, outline, thickness, nozzle, materials,
       hole, holeTab, pocket, sampleText,
-      backStarter: svgText && backStarter ? 'text-qr' : 'none',
+      subtitle: preset.subtitle,
+      // Seed a back QR + caption for card-like templates, or when an SVG logo
+      // takes the front and the back is the writable side.
+      backStarter: (svgText ? backStarter : preset.backStarter) ? 'text-qr' : 'none',
     })
     if (svgText) {
       applySvgOutline(doc, svgText, dims.w, {
