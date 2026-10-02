@@ -9,6 +9,7 @@ import { create } from 'zustand'
 import type { DocumentV2 } from '../types/cardforge'
 import {
   compileDocument,
+  CoreUnreachableError,
   type ConstraintIssue,
   type ManufacturingSummary,
   type CompileStats,
@@ -16,6 +17,7 @@ import {
   type PartReport,
 } from '../studio/core/CoreClient'
 import { useDocumentStore, type DocumentStoreState } from './DocumentStore'
+import { markEngineOffline, markEngineOnline } from './EngineStore'
 
 export type CompileStatus = 'idle' | 'compiling' | 'ok' | 'error'
 
@@ -199,6 +201,7 @@ async function runCompile(doc: DocumentV2): Promise<void> {
   try {
     const res = await compileDocument(doc)
     if (requestId !== requestCounter) return // stale response — drop
+    markEngineOnline() // a response arrived — the engine is up
     const extra = extraIssues(res.warnings, res.skippedFeatures)
     if (res.model3mfBase64) {
       useCompileStore.setState({
@@ -224,6 +227,9 @@ async function runCompile(doc: DocumentV2): Promise<void> {
     }
   } catch (e) {
     if (requestId !== requestCounter) return
+    // Engine unreachable is a connection state, not a compile failure — let the
+    // EngineStore flip to "offline" so the UI stays calm instead of alarming.
+    if (e instanceof CoreUnreachableError) markEngineOffline()
     // The compile could not run (e.g. Core unreachable). Clear the previous
     // result so a stale blocker never outlives the document it described —
     // the verdict then reads "Sin verificar", not an obsolete "No imprime".

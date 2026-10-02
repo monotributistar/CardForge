@@ -13,6 +13,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { ThreeMFLoader } from 'three/examples/jsm/loaders/3MFLoader.js'
 import { useCompileStore } from '../../state/CompileStore'
+import { useEngineStore, refreshEngine } from '../../state/EngineStore'
 import { useDocumentStore, getActiveTab } from '../../state/DocumentStore'
 import type { PartReport } from '../core/CoreClient'
 
@@ -44,6 +45,7 @@ export const CompiledViewer: React.FC = () => {
   const model3mfB64 = useCompileStore(s => s.model3mfB64)
   const status = useCompileStore(s => s.status)
   const compileError = useCompileStore(s => s.error)
+  const engineOffline = useEngineStore(s => s.status === 'offline')
   const compiledParts = useCompileStore(s => s.parts)
   const materials = useCompileStore(s => s.materials)
 
@@ -425,11 +427,26 @@ export const CompiledViewer: React.FC = () => {
           Failed to parse 3MF: {parseError}
         </div>
       )}
-      {!model3mfB64 && !parseError && (
+      {!model3mfB64 && !parseError && engineOffline && (
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 5, color: '#AEB6C0', fontSize: 13 }}>
+          <div style={{ textAlign: 'center', maxWidth: 320, pointerEvents: 'auto' }}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>🧩</div>
+            <div style={{ color: '#E6E9ED', marginBottom: 4 }}>La vista 3D necesita el motor</div>
+            <div style={{ fontSize: 11, color: '#5B6673', lineHeight: '16px', marginBottom: 10 }}>
+              Podés diseñar, validar y corregir sin conexión. Conectá el motor para ver y exportar la geometría 3D.
+            </div>
+            <button
+              onClick={() => void refreshEngine()}
+              style={{ background: '#C24A1C', color: '#fff', border: 'none', borderRadius: 5, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+            >Conectar motor</button>
+          </div>
+        </div>
+      )}
+      {!model3mfB64 && !parseError && !engineOffline && (
         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 5, color: '#5B6673', fontSize: 13, pointerEvents: 'none' }}>
           <div style={{ textAlign: 'center' }}>
             <div style={{ fontSize: 32, marginBottom: 8 }}>📦</div>
-            <div>{status === 'error' ? 'Compile failed' : 'No compiled model yet'}</div>
+            <div>{status === 'error' ? 'No se pudo compilar' : status === 'compiling' ? 'Compilando…' : 'Todavía no hay modelo 3D'}</div>
             {status === 'error' && compileError && (
               <div style={{ fontSize: 11, marginTop: 4, maxWidth: 360 }}>{compileError}</div>
             )}

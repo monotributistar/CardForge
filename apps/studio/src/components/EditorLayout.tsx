@@ -8,6 +8,7 @@
 import React, { useEffect, useState } from 'react'
 import { useDocumentStore, getActiveTab } from '../state/DocumentStore'
 import { useCompileStore, recompileActive } from '../state/CompileStore'
+import { useEngineStore, refreshEngine } from '../state/EngineStore'
 import { useUIStore } from '../state/UIStore'
 import { FeatureTree } from './FeatureTree'
 import { MaterialPalette } from './MaterialPalette'
@@ -148,12 +149,17 @@ const StatusBar: React.FC = () => {
   const error = useCompileStore(s => s.error)
   const manufacturing = useCompileStore(s => s.manufacturing)
   const stats = useCompileStore(s => s.stats)
+  const engineStatus = useEngineStore(s => s.status)
   const issuesOpen = useUIStore(s => s.issuesOpen)
   const toggleIssues = useUIStore(s => s.toggleIssues)
 
   const verdict = useVerdict()
   const errorCount = verdict.blockers.length
   const warningCount = verdict.warnings.length
+
+  // The engine is optional: when it's off, say so calmly (design keeps working)
+  // rather than surfacing a red compile error.
+  const engineOffline = engineStatus === 'offline'
 
   return (
     <div style={{
@@ -163,7 +169,18 @@ const StatusBar: React.FC = () => {
       {/* Unified verdict — the one answer every surface shares. */}
       <VerdictBadge verdict={verdict} />
 
-      {status === 'error' && error && (
+      {engineOffline ? (
+        <>
+          <span style={{ color: '#5B6673', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 420 }}
+            title="El diseño 2D, la validación y los arreglos funcionan sin motor. La vista 3D y la exportación lo necesitan.">
+            Sin motor · diseño disponible sin conexión
+          </span>
+          <button
+            onClick={() => void refreshEngine()}
+            style={{ background: '#1E232A', color: '#E6E9ED', border: '1px solid #2A313A', borderRadius: 4, padding: '2px 8px', fontSize: 10, cursor: 'pointer' }}
+          >Conectar</button>
+        </>
+      ) : status === 'error' && error && (
         <>
           <span style={{ color: '#E04343', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 380 }} title={error}>{error}</span>
           <button

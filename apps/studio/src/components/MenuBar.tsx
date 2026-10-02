@@ -7,6 +7,7 @@ import {
 } from '../state/DocumentStore'
 import { openDocumentViaDialog, saveActiveTab, saveActiveTabAs, exportActiveTab } from '../state/fileio'
 import { useUIStore } from '../state/UIStore'
+import { EngineControl } from './EngineControl'
 
 export const MenuBar: React.FC = () => {
   const tab = useDocumentStore(getActiveTab)
@@ -60,6 +61,9 @@ export const MenuBar: React.FC = () => {
           {tab.dirty && <span title="Unsaved changes" style={{ color: '#E0A32E', fontSize: 14, lineHeight: 1 }}>●</span>}
         </span>
       )}
+
+      <span style={{ width: 1, height: 16, background: '#2A313A', margin: '0 6px' }} />
+      <EngineControl />
     </div>
   )
 }
