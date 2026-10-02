@@ -4,9 +4,30 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CardForge Studio</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
     <style>
+      /* CardForge brand tokens — see brand manual */
+      :root {
+        --cf-ember: #E8622C;        /* acento */
+        --cf-ember-deep: #C24A1C;   /* relleno con texto blanco */
+        --cf-graphite: #16191D;     /* fondo */
+        --cf-steel-900: #13161B;
+        --cf-steel-800: #1A1E24;    /* paneles */
+        --cf-steel-700: #1E232A;    /* elevado */
+        --cf-steel-600: #2A313A;    /* bordes */
+        --cf-steel-500: #5B6673;    /* texto apagado */
+        --cf-mist: #E6E9ED;         /* texto */
+        --cf-ok: #1F9D63;
+        --cf-warn: #E0A32E;
+        --cf-err: #E04343;
+        --cf-font-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        --cf-font-display: 'Space Grotesk', 'IBM Plex Sans', sans-serif;
+        --cf-font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+      }
       * { margin: 0; padding: 0; box-sizing: border-box; }
-      body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0d1117; color: #c9d1d9; }
+      body { font-family: var(--cf-font-sans); background: var(--cf-graphite); color: var(--cf-mist); }
     </style>
   </head>
   <body>

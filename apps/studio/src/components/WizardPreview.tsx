@@ -41,7 +41,7 @@ export const WizardPreview: React.FC<{
 
   // The card sits on a neutral stage; a pale card needs an outline to be
   // visible against it, a dark one does not.
-  const edge = relativeLuminance(baseColor) > 0.7 ? '#8b949e' : '#30363d'
+  const edge = relativeLuminance(baseColor) > 0.7 ? '#AEB6C0' : '#2A313A'
   const mm = (v: number) => v * scale
 
   const bodyShape = () => {
@@ -54,7 +54,7 @@ export const WizardPreview: React.FC<{
 
   const holeGlyph = () => {
     if (hole === 'none') return null
-    const void_ = { fill: '#0d1117', stroke: edge, strokeWidth: 0.6 }
+    const void_ = { fill: '#16191D', stroke: edge, strokeWidth: 0.6 }
     const dashed = { fill: 'none', stroke: inkColor, strokeWidth: 0.6, strokeDasharray: '3 2', opacity: 0.55 }
     if (hole === 'keyring') {
       const d = mm(5)
@@ -91,7 +91,7 @@ export const WizardPreview: React.FC<{
 
   return (
     <div style={{
-      background: '#0d1117', border: '1px solid #21262d', borderRadius: 8,
+      background: '#16191D', border: '1px solid #1E232A', borderRadius: 8,
       padding: 8, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
     }}>
       <svg width="100%" viewBox={`0 0 ${BOX_W} ${BOX_H}`} style={{ display: 'block', maxWidth: BOX_W }}>
@@ -117,7 +117,7 @@ export const WizardPreview: React.FC<{
         </g>
         {holeGlyph()}
       </svg>
-      <div style={{ fontSize: 10, color: '#484f58', fontVariantNumeric: 'tabular-nums' }}>
+      <div style={{ fontSize: 10, color: '#5B6673', fontVariantNumeric: 'tabular-nums' }}>
         {outline.type === 'circle' ? `Ø${W}` : `${W} × ${H}`} × {thickness} mm
         {materials.length > 1 ? ` · ${materials.length} filaments` : ' · 1 filament'}
       </div>

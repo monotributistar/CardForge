@@ -29,7 +29,7 @@ export const IssuesList: React.FC = () => {
   return (
     <div style={{ padding: '6px 10px' }}>
       {ordered.length === 0 ? (
-        <div style={{ fontSize: 12, color: '#3fb950', padding: '4px 2px' }}>✓ No issues — ready to print</div>
+        <div style={{ fontSize: 12, color: '#1F9D63', padding: '4px 2px' }}>✓ No issues — ready to print</div>
       ) : (
         ordered.map((issue, i) => (
           <IssueRow key={`${issue.source}-${issue.code}-${i}`} issue={issue} onClick={onRowClick} />
@@ -42,7 +42,7 @@ export const IssuesList: React.FC = () => {
 const IssueRow: React.FC<{ issue: UnifiedIssue; onClick: (issue: UnifiedIssue) => void }> = ({ issue, onClick }) => {
   const [hover, setHover] = useState(false)
   const clickable = !!issue.featureId
-  const dot = issue.severity === 'error' ? '#f85149' : '#d29922'
+  const dot = issue.severity === 'error' ? '#E04343' : '#E0A32E'
   return (
     <div
       onClick={() => clickable && onClick(issue)}
@@ -52,14 +52,14 @@ const IssueRow: React.FC<{ issue: UnifiedIssue; onClick: (issue: UnifiedIssue) =
       style={{
         display: 'flex', gap: 7, padding: '5px 6px', borderRadius: 4,
         cursor: clickable ? 'pointer' : 'default',
-        background: hover && clickable ? '#21262d' : 'transparent',
+        background: hover && clickable ? '#1E232A' : 'transparent',
       }}
     >
       <span style={{ width: 7, height: 7, borderRadius: '50%', background: dot, flexShrink: 0, marginTop: 5 }} />
       <div style={{ minWidth: 0, flex: 1 }}>
-        <div style={{ fontSize: 12, color: '#c9d1d9', lineHeight: '16px' }}>{issue.message}</div>
+        <div style={{ fontSize: 12, color: '#E6E9ED', lineHeight: '16px' }}>{issue.message}</div>
         {issue.suggestion && (
-          <div style={{ fontSize: 11, color: '#8b949e', lineHeight: '15px', marginTop: 1 }}>{issue.suggestion}</div>
+          <div style={{ fontSize: 11, color: '#AEB6C0', lineHeight: '15px', marginTop: 1 }}>{issue.suggestion}</div>
         )}
       </div>
     </div>

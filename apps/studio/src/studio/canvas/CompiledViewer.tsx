@@ -74,7 +74,7 @@ export const CompiledViewer: React.FC = () => {
     if (!el) return
 
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color('#0d1117')
+    scene.background = new THREE.Color('#16191D')
 
     const camera = new THREE.PerspectiveCamera(45, el.clientWidth / Math.max(1, el.clientHeight), 0.1, 1000)
     camera.position.set(80, 40, 120)
@@ -99,7 +99,7 @@ export const CompiledViewer: React.FC = () => {
     scene.add(dir2)
 
     // Bed reference: grid at y=0, one cell = GRID_MM millimeters
-    const grid = new THREE.GridHelper(160, 160 / GRID_MM, '#3d444d', '#21262d')
+    const grid = new THREE.GridHelper(160, 160 / GRID_MM, '#2A313A', '#1E232A')
     grid.position.y = 0
     scene.add(grid)
 
@@ -220,7 +220,7 @@ export const CompiledViewer: React.FC = () => {
         } else {
           s.partMeshes.set(name, [obj])
           const mat = obj.material as THREE.MeshPhongMaterial
-          const color = mat?.color ? `#${mat.color.getHexString()}` : '#8b949e'
+          const color = mat?.color ? `#${mat.color.getHexString()}` : '#AEB6C0'
           partList.push({ name, color })
         }
         // Edge overlay (as child so it inherits the mesh transform)
@@ -354,7 +354,7 @@ export const CompiledViewer: React.FC = () => {
         <Btn onClick={cycleMode}>
           {renderMode === 'solid' ? 'Solid' : renderMode === 'wireframe' ? 'Wire' : 'Solid+E'}
         </Btn>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#8b949e', background: '#161b22', border: '1px solid #30363d', borderRadius: 4, padding: '2px 8px' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#AEB6C0', background: '#1A1E24', border: '1px solid #2A313A', borderRadius: 4, padding: '2px 8px' }}>
           Explode
           <input
             type="range" min={0} max={1} step={0.01} value={explosion}
@@ -362,14 +362,14 @@ export const CompiledViewer: React.FC = () => {
             style={{ width: 70 }}
           />
         </label>
-        <span style={{ fontSize: 10, color: '#484f58', background: '#161b22', border: '1px solid #30363d', borderRadius: 4, padding: '2px 8px' }}>
+        <span style={{ fontSize: 10, color: '#5B6673', background: '#1A1E24', border: '1px solid #2A313A', borderRadius: 4, padding: '2px 8px' }}>
           Grid {GRID_MM} mm
         </span>
       </div>
 
       {/* Part legend — click a part in the 3D view or here to inspect it */}
       {parts.length > 0 && (
-        <div style={{ position: 'absolute', top: 8, right: 8, zIndex: 10, background: '#161b22', border: '1px solid #30363d', borderRadius: 6, padding: 8 }}>
+        <div style={{ position: 'absolute', top: 8, right: 8, zIndex: 10, background: '#1A1E24', border: '1px solid #2A313A', borderRadius: 6, padding: 8 }}>
           {parts.map(p => {
             const visible = !hiddenParts.has(p.name)
             const info = compiledParts.find(cp => cp.label === p.name)
@@ -387,10 +387,10 @@ export const CompiledViewer: React.FC = () => {
                   title="Show/hide part"
                   style={{
                     width: 12, height: 12, borderRadius: 2,
-                    background: visible ? p.color : '#30363d',
+                    background: visible ? p.color : '#2A313A',
                     border: `1px solid ${p.color}`,
                   }} />
-                <span style={{ fontSize: 11, color: isSel ? '#58a6ff' : visible ? '#c9d1d9' : '#484f58' }}>{p.name}</span>
+                <span style={{ fontSize: 11, color: isSel ? '#E8622C' : visible ? '#E6E9ED' : '#5B6673' }}>{p.name}</span>
               </div>
             )
           })}
@@ -399,15 +399,15 @@ export const CompiledViewer: React.FC = () => {
 
       {/* Selected part dimensions (mm) */}
       {selectedParts.length > 0 && (
-        <div style={{ position: 'absolute', bottom: 8, right: 8, zIndex: 10, background: '#161b22', border: '1px solid #30363d', borderRadius: 6, padding: '6px 10px', fontSize: 11, color: '#c9d1d9' }}>
+        <div style={{ position: 'absolute', bottom: 8, right: 8, zIndex: 10, background: '#1A1E24', border: '1px solid #2A313A', borderRadius: 6, padding: '6px 10px', fontSize: 11, color: '#E6E9ED' }}>
           {selectedParts.map(p => {
             const mat = matById.get(p.material)
             return (
               <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '1px 0' }}>
-                <span style={{ width: 10, height: 10, borderRadius: 2, background: mat?.color ?? '#8b949e', flexShrink: 0 }} />
-                <span style={{ color: '#8b949e' }}>{p.label}</span>
+                <span style={{ width: 10, height: 10, borderRadius: 2, background: mat?.color ?? '#AEB6C0', flexShrink: 0 }} />
+                <span style={{ color: '#AEB6C0' }}>{p.label}</span>
                 <span>{fmt(p.sizeMm[0])} × {fmt(p.sizeMm[1])} × {fmt(p.sizeMm[2])} mm</span>
-                <span style={{ color: '#484f58' }}>z {fmt(p.zMm[0])}–{fmt(p.zMm[1])}</span>
+                <span style={{ color: '#5B6673' }}>z {fmt(p.zMm[0])}–{fmt(p.zMm[1])}</span>
               </div>
             )
           })}
@@ -416,17 +416,17 @@ export const CompiledViewer: React.FC = () => {
 
       {/* Status overlays */}
       {status === 'compiling' && (
-        <div style={{ position: 'absolute', bottom: 8, left: 8, zIndex: 10, color: '#d29922', fontSize: 11, background: '#161b22', border: '1px solid #30363d', borderRadius: 4, padding: '2px 8px' }}>
+        <div style={{ position: 'absolute', bottom: 8, left: 8, zIndex: 10, color: '#E0A32E', fontSize: 11, background: '#1A1E24', border: '1px solid #2A313A', borderRadius: 4, padding: '2px 8px' }}>
           Compiling…
         </div>
       )}
       {parseError && (
-        <div style={{ position: 'absolute', bottom: 8, left: 8, right: 8, zIndex: 10, color: '#f85149', fontSize: 11, background: '#161b22', border: '1px solid #f85149', borderRadius: 4, padding: '4px 8px' }}>
+        <div style={{ position: 'absolute', bottom: 8, left: 8, right: 8, zIndex: 10, color: '#E04343', fontSize: 11, background: '#1A1E24', border: '1px solid #E04343', borderRadius: 4, padding: '4px 8px' }}>
           Failed to parse 3MF: {parseError}
         </div>
       )}
       {!model3mfB64 && !parseError && (
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 5, color: '#484f58', fontSize: 13, pointerEvents: 'none' }}>
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 5, color: '#5B6673', fontSize: 13, pointerEvents: 'none' }}>
           <div style={{ textAlign: 'center' }}>
             <div style={{ fontSize: 32, marginBottom: 8 }}>📦</div>
             <div>{status === 'error' ? 'Compile failed' : 'No compiled model yet'}</div>
@@ -444,7 +444,7 @@ export const CompiledViewer: React.FC = () => {
 
 const Btn: React.FC<{ onClick: () => void; children: React.ReactNode; style?: React.CSSProperties }> = ({ onClick, children, style }) => (
   <button onClick={onClick} style={{
-    background: '#21262d', color: '#c9d1d9', border: '1px solid #30363d',
+    background: '#1E232A', color: '#E6E9ED', border: '1px solid #2A313A',
     padding: '2px 10px', borderRadius: 4, cursor: 'pointer', fontSize: 11, ...style,
   }}>{children}</button>
 )

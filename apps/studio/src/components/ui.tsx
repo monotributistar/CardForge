@@ -22,13 +22,13 @@ if (typeof document !== 'undefined' && !document.getElementById('cf-ui-style')) 
     '.cf-num-stepper input[type=number]::-webkit-inner-spin-button,',
     '.cf-num-stepper input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}',
     '.cf-num-stepper input[type=number]{-moz-appearance:textfield;appearance:textfield}',
-    '.cf-num-stepper button:hover:not(:disabled){background:#30363d;color:#fff}',
-    '.cf-num-stepper button:active:not(:disabled){background:#1f6feb;color:#fff}',
+    '.cf-num-stepper button:hover:not(:disabled){background:#2A313A;color:#fff}',
+    '.cf-num-stepper button:active:not(:disabled){background:#C24A1C;color:#fff}',
     '.cf-num-stepper button:disabled{opacity:.4;cursor:default}',
     // hint tooltips: dotted label, bubble above on hover
-    '.cf-hint{position:relative;cursor:help;border-bottom:1px dotted #484f58}',
+    '.cf-hint{position:relative;cursor:help;border-bottom:1px dotted #5B6673}',
     '.cf-hint:hover::after{content:attr(data-hint);position:absolute;left:0;bottom:calc(100% + 6px);',
-    'background:#1c2128;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:6px 9px;',
+    'background:#1A1E24;color:#E6E9ED;border:1px solid #2A313A;border-radius:6px;padding:6px 9px;',
     'font-size:11px;line-height:1.45;width:max-content;max-width:240px;white-space:normal;',
     'z-index:1000;box-shadow:0 4px 12px rgba(0,0,0,.55);pointer-events:none}',
     // generic buttons
@@ -44,7 +44,7 @@ export const Section: React.FC<{ title: string; children: React.ReactNode }> = (
   <div style={{ marginBottom: 16 }}>
     <div style={{
       fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6,
-      color: '#8b949e', borderBottom: '1px solid #21262d', paddingBottom: 5, marginBottom: 8,
+      color: '#AEB6C0', borderBottom: '1px solid #1E232A', paddingBottom: 5, marginBottom: 8,
     }}>{title}</div>
     {children}
   </div>
@@ -60,7 +60,7 @@ export const Row: React.FC<{ label: string; hint?: string; vertical?: boolean; c
     <span
       className={hint ? 'cf-hint' : undefined}
       data-hint={hint}
-      style={{ width: vertical ? 'auto' : LABEL_W, flexShrink: 0, color: '#8b949e', fontSize: 12, alignSelf: vertical ? undefined : 'center' }}
+      style={{ width: vertical ? 'auto' : LABEL_W, flexShrink: 0, color: '#AEB6C0', fontSize: 12, alignSelf: vertical ? undefined : 'center' }}
     >{label}</span>
     {children}
   </div>
@@ -68,19 +68,19 @@ export const Row: React.FC<{ label: string; hint?: string; vertical?: boolean; c
 
 /** Standalone ⓘ hint — for section headers or free-form spots. */
 export const HelpTip: React.FC<{ text: string }> = ({ text }) => (
-  <span className="cf-hint" data-hint={text} style={{ color: '#484f58', fontSize: 11, marginLeft: 5, borderBottom: 'none' }}>ⓘ</span>
+  <span className="cf-hint" data-hint={text} style={{ color: '#5B6673', fontSize: 11, marginLeft: 5, borderBottom: 'none' }}>ⓘ</span>
 )
 
 // ── Inputs ───────────────────────────────────────────────────────────
 
 export const inputStyle: React.CSSProperties = {
-  flex: 1, minWidth: 0, width: '100%', background: '#0d1117', color: '#c9d1d9',
-  border: '1px solid #30363d', borderRadius: 4, padding: '4px 8px',
+  flex: 1, minWidth: 0, width: '100%', background: '#16191D', color: '#E6E9ED',
+  border: '1px solid #2A313A', borderRadius: 4, padding: '4px 8px',
   fontSize: FONT_SIZE, height: CONTROL_H, boxSizing: 'border-box',
 }
 
 export const ReadOnly: React.FC<{ value: string }> = ({ value }) => (
-  <span style={{ fontSize: 11, color: '#484f58', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</span>
+  <span style={{ fontSize: 11, color: '#5B6673', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</span>
 )
 
 /** Text input that commits on blur/Enter (avoids clobbering while typing). */
@@ -125,8 +125,8 @@ export const TextArea: React.FC<{ value: string; rows?: number; placeholder?: st
 }
 
 const stepBtnStyle: React.CSSProperties = {
-  width: CONTROL_H, flexShrink: 0, background: '#21262d', color: '#c9d1d9',
-  border: '1px solid #30363d', cursor: 'pointer', fontSize: 17, lineHeight: 1,
+  width: CONTROL_H, flexShrink: 0, background: '#1E232A', color: '#E6E9ED',
+  border: '1px solid #2A313A', cursor: 'pointer', fontSize: 17, lineHeight: 1,
   padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', userSelect: 'none',
 }
 
@@ -178,7 +178,7 @@ export const MaterialSelect: React.FC<{ materials: Material[]; value: string; al
     <span style={{
       width: 14, height: 14, borderRadius: 3, flexShrink: 0,
       background: materials.find(m => m.id === value)?.color ?? 'transparent',
-      border: '1px solid #30363d',
+      border: '1px solid #2A313A',
     }} />
     <select value={value} onChange={e => onCommit(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
       {allowEmpty && <option value="">{emptyLabel ?? '(none)'}</option>}
@@ -196,8 +196,8 @@ export const ActionBtn: React.FC<{ title: string; onClick: () => void; children:
     title={title}
     onClick={onClick}
     style={{
-      width: CONTROL_H, height: CONTROL_H, background: '#21262d', color: '#c9d1d9',
-      border: '1px solid #30363d', borderRadius: 4, cursor: 'pointer', fontSize: 13,
+      width: CONTROL_H, height: CONTROL_H, background: '#1E232A', color: '#E6E9ED',
+      border: '1px solid #2A313A', borderRadius: 4, cursor: 'pointer', fontSize: 13,
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
     }}
   >{children}</button>
@@ -218,9 +218,9 @@ export const Btn: React.FC<{
     disabled={disabled}
     title={title}
     style={{
-      background: primary ? '#1f6feb' : '#21262d',
-      color: primary ? '#fff' : '#c9d1d9',
-      border: primary ? '1px solid #1f6feb' : '1px solid #30363d',
+      background: primary ? '#C24A1C' : '#1E232A',
+      color: primary ? '#fff' : '#E6E9ED',
+      border: primary ? '1px solid #C24A1C' : '1px solid #2A313A',
       padding: '7px 14px', borderRadius: 6, cursor: disabled ? 'default' : 'pointer',
       fontSize: FONT_SIZE, minHeight: 34,
       ...style,

@@ -13,7 +13,7 @@ import { bestTextColor, isLibraryName } from '../studio/services/Filaments'
 const ROLES: Array<NonNullable<Material['role']>> = ['base', 'text', 'accent', 'detail', 'support']
 
 const smallInputStyle: React.CSSProperties = {
-  background: '#0d1117', color: '#c9d1d9', border: '1px solid #30363d',
+  background: '#16191D', color: '#E6E9ED', border: '1px solid #2A313A',
   borderRadius: 4, padding: '2px 4px', fontSize: 11, minWidth: 0,
 }
 
@@ -74,23 +74,23 @@ export const MaterialPalette: React.FC = () => {
   }
 
   return (
-    <div style={{ borderTop: '1px solid #30363d', padding: '8px 10px', flexShrink: 0 }}>
+    <div style={{ borderTop: '1px solid #2A313A', padding: '8px 10px', flexShrink: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: collapsed ? 0 : 6 }}>
         <span
           onClick={() => setCollapsed(c => !c)}
           title="Collapse / expand"
-          style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, color: '#8b949e', cursor: 'pointer', userSelect: 'none' }}
+          style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, color: '#AEB6C0', cursor: 'pointer', userSelect: 'none' }}
         >{collapsed ? '▸' : '▾'} Materials</span>
         <button
           onClick={addMaterial}
           title="Add material"
-          style={{ background: '#21262d', color: '#58a6ff', border: '1px solid #30363d', borderRadius: 4, width: 22, height: 22, cursor: 'pointer', fontSize: 13, lineHeight: '16px', padding: 0 }}
+          style={{ background: '#1E232A', color: '#E8622C', border: '1px solid #2A313A', borderRadius: 4, width: 22, height: 22, cursor: 'pointer', fontSize: 13, lineHeight: '16px', padding: 0 }}
         >+</button>
       </div>
       {!collapsed && doc.materials.map(m => {
         const blockReason = deleteBlockReason(m)
         return (
-          <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 0', fontSize: 11, color: '#c9d1d9' }}>
+          <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 0', fontSize: 11, color: '#E6E9ED' }}>
             <ColorPicker
               color={m.color}
               base={m.role === 'base' ? null : baseColor}

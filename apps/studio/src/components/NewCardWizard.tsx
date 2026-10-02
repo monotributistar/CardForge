@@ -224,14 +224,14 @@ export const NewCardWizard: React.FC = () => {
         onKeyDown={onKeyDown}
         style={{
           width: showPreview ? 780 : 620, maxWidth: '94vw', maxHeight: '92vh', overflowY: 'auto',
-          background: '#161b22', border: '1px solid #30363d', borderRadius: 12,
+          background: '#1A1E24', border: '1px solid #2A313A', borderRadius: 12,
           boxShadow: '0 12px 40px rgba(0,0,0,0.6)', padding: '22px 26px 16px',
           display: 'flex', flexDirection: 'column', gap: 14,
         }}
       >
         {/* Header + step rail */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: '#e6edf3', flexShrink: 0 }}>New card</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: '#F2F4F7', flexShrink: 0 }}>New card</div>
           <div style={{ display: 'flex', gap: 4, flex: 1, minWidth: 0, overflow: 'hidden' }}>
             {STEPS.map((label, i) => {
               const done = i < step
@@ -248,14 +248,14 @@ export const NewCardWizard: React.FC = () => {
                   style={{
                     background: 'transparent', border: 'none', padding: '2px 6px',
                     fontSize: 11, cursor: i > step ? 'default' : 'pointer',
-                    color: active ? '#58a6ff' : done ? '#3fb950' : '#484f58',
+                    color: active ? '#E8622C' : done ? '#1F9D63' : '#5B6673',
                     fontWeight: active ? 700 : 400, whiteSpace: 'nowrap',
                   }}
                 >{i + 1}. {label}</button>
               )
             })}
           </div>
-          <button onClick={closeWizard} title="Close (Esc)" style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: 15, padding: 4, flexShrink: 0 }}>✕</button>
+          <button onClick={closeWizard} title="Close (Esc)" style={{ background: 'transparent', border: 'none', color: '#AEB6C0', cursor: 'pointer', fontSize: 15, padding: 4, flexShrink: 0 }}>✕</button>
         </div>
 
         <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start' }}>
@@ -269,16 +269,16 @@ export const NewCardWizard: React.FC = () => {
                     onClick={() => pickPreset(p)}
                     style={{
                       display: 'flex', gap: 12, alignItems: 'center', padding: '14px 14px',
-                      border: `1px solid ${preset.key === p.key ? '#1f6feb' : '#30363d'}`,
-                      borderRadius: 8, cursor: 'pointer', background: '#0d1117',
+                      border: `1px solid ${preset.key === p.key ? '#C24A1C' : '#2A313A'}`,
+                      borderRadius: 8, cursor: 'pointer', background: '#16191D',
                     }}
-                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = '#58a6ff' }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = preset.key === p.key ? '#1f6feb' : '#30363d' }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = '#E8622C' }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = preset.key === p.key ? '#C24A1C' : '#2A313A' }}
                   >
                     <span style={{ fontSize: 24 }}>{p.icon}</span>
                     <span style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: '#e6edf3' }}>{p.label}</div>
-                      <div style={{ fontSize: 11, color: '#8b949e' }}>{p.desc}</div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#F2F4F7' }}>{p.label}</div>
+                      <div style={{ fontSize: 11, color: '#AEB6C0' }}>{p.desc}</div>
                     </span>
                   </div>
                 ))}
@@ -294,12 +294,12 @@ export const NewCardWizard: React.FC = () => {
                 {preset.key === 'svg' && (
                   <>
                     <Row label="SVG file" hint="The artwork's silhouette becomes the card shape; each color prints in its own filament">
-                      <input type="file" accept=".svg,image/svg+xml" style={{ fontSize: 11, color: '#8b949e', maxWidth: 200 }}
+                      <input type="file" accept=".svg,image/svg+xml" style={{ fontSize: 11, color: '#AEB6C0', maxWidth: 200 }}
                         onChange={e => { const f = e.target.files?.[0]; if (f) loadSvg(f); e.target.value = '' }} />
                     </Row>
                     {svgText && (
                       <>
-                        <div style={{ fontSize: 11, color: '#3fb950', padding: '2px 0' }}>
+                        <div style={{ fontSize: 11, color: '#1F9D63', padding: '2px 0' }}>
                           ✓ SVG loaded — {svgColors} color{svgColors === 1 ? '' : 's'} detected (each gets a material)
                         </div>
                         <Row label="Colors on" hint="Which face shows the artwork. The other face prints solid in the base material — that's where text and QR go">
@@ -367,7 +367,7 @@ export const NewCardWizard: React.FC = () => {
               <div>
                 <PaletteEditor materials={materials} onChange={setMaterials} />
                 {svgText && (
-                  <div style={{ fontSize: 11, color: '#8b949e', marginTop: 12 }}>
+                  <div style={{ fontSize: 11, color: '#AEB6C0', marginTop: 12 }}>
                     The artwork's {svgColors} colour{svgColors === 1 ? '' : 's'} get their own materials on top of these
                     when the card is created.
                   </div>
@@ -399,7 +399,7 @@ export const NewCardWizard: React.FC = () => {
                   />
                 </Row>
                 {pocket && (
-                  <div style={{ fontSize: 11, color: '#8b949e', margin: '-2px 0 8px' }}>
+                  <div style={{ fontSize: 11, color: '#AEB6C0', margin: '-2px 0 8px' }}>
                     Bore Ø{(pocket.diameter + DEFAULT_POCKET_CLEARANCE).toFixed(1)}mm × {(pocket.depth + DEFAULT_POCKET_DEPTH_CLEARANCE).toFixed(1)}mm deep
                     (insert + fit clearance) — needs {minThicknessForPocket(pocket)}mm of thickness.
                     Fine-tune the fit in the inspector afterwards.
@@ -431,14 +431,14 @@ export const NewCardWizard: React.FC = () => {
         {problems.length > 0 && step === LAST && (
           <div style={{
             padding: '8px 10px', borderRadius: 6, fontSize: 11, lineHeight: 1.5,
-            background: 'rgba(248,81,73,0.08)', border: '1px solid rgba(248,81,73,0.4)', color: '#f85149',
+            background: 'rgba(248,81,73,0.08)', border: '1px solid rgba(248,81,73,0.4)', color: '#E04343',
           }}>
             {problems.map((p, i) => <div key={i}>{p}</div>)}
           </div>
         )}
 
         {/* Footer nav */}
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end', borderTop: '1px solid #21262d', paddingTop: 12 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end', borderTop: '1px solid #1E232A', paddingTop: 12 }}>
           {step > 0 && <Btn onClick={() => setStep(s => s - 1)}>← Back</Btn>}
           <span style={{ flex: 1 }} />
           {canAdvance && <Btn primary onClick={next}>Next →</Btn>}
