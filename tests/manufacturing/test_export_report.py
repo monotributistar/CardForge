@@ -21,7 +21,7 @@ class TestExportReportJson:
         report = ManufacturingReport()
         out = tmp_path / "report.json"
         export_report_json(report, out)
-        data = json.loads(out.read_text())
+        data = json.loads(out.read_text(encoding="utf-8"))
         assert data["score"] == 100
 
     def test_json_with_issues(self, tmp_path):
@@ -33,7 +33,7 @@ class TestExportReportJson:
         ))
         out = tmp_path / "report.json"
         export_report_json(report, out)
-        data = json.loads(out.read_text())
+        data = json.loads(out.read_text(encoding="utf-8"))
         assert len(data["issues"]) == 1
         assert data["issues"][0]["code"] == "qr_too_small"
         assert data["suggestions"] == ["Increase QR"]
@@ -43,14 +43,14 @@ class TestExportReportJson:
         report.metrics.feature_count = 5
         out = tmp_path / "report.json"
         export_report_json(report, out)
-        data = json.loads(out.read_text())
+        data = json.loads(out.read_text(encoding="utf-8"))
         assert data["metrics"]["feature_count"] == 5
 
     def test_json_contains_profile(self, tmp_path):
         report = ManufacturingReport(profile=ManufacturingProfile.fdm_standard())
         out = tmp_path / "report.json"
         export_report_json(report, out)
-        data = json.loads(out.read_text())
+        data = json.loads(out.read_text(encoding="utf-8"))
         assert data["profile"]["process"] == "fdm"
 
     def test_creates_parent_dirs(self, tmp_path):
@@ -72,7 +72,7 @@ class TestExportReportMarkdown:
         report = ManufacturingReport()
         out = tmp_path / "report.md"
         export_report_markdown(report, out)
-        content = out.read_text()
+        content = out.read_text(encoding="utf-8")
         assert "100/100" in content
 
     def test_md_with_warnings(self, tmp_path):
@@ -83,7 +83,7 @@ class TestExportReportMarkdown:
         ))
         out = tmp_path / "report.md"
         export_report_markdown(report, out)
-        content = out.read_text()
+        content = out.read_text(encoding="utf-8")
         assert "Emboss too low" in content
         assert "Increase to 0.4mm" in content
 
@@ -95,7 +95,7 @@ class TestExportReportMarkdown:
         ))
         out = tmp_path / "report.md"
         export_report_markdown(report, out)
-        content = out.read_text()
+        content = out.read_text(encoding="utf-8")
         assert "Not manufacturable" in content
 
 

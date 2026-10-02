@@ -14,8 +14,12 @@ from typing import Any, Dict
 _VAR_RE = re.compile(r"\{\{(.+?)\}\}")
 
 
-class UnresolvedVariableError(Exception):
-    """Raised when a template variable cannot be resolved."""
+class UnresolvedVariableError(ValueError):
+    """Raised when a template variable cannot be resolved.
+
+    A ValueError so that every front door's "bad input" handler catches it
+    and reports the variable name instead of crashing with a 500.
+    """
 
 
 def resolve_variables(doc: Dict[str, Any]) -> Dict[str, Any]:

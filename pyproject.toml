@@ -28,9 +28,15 @@ dev = [
     "pytest-cov>=4.0",
     "ruff>=0.3",
 ]
+# MCP server — lets an AI agent drive the compiler. Optional so the Core
+# stays installable without it.
+mcp = [
+    "mcp>=2.0",
+]
 
 [project.scripts]
 cardforge = "cardforge.cli:main"
+cardforge-mcp = "cardforge.mcp_server:main"
 
 [build-system]
 requires = ["hatchling"]
