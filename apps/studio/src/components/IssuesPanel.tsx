@@ -51,10 +51,13 @@ export function quickFixes(doc: DocumentV2): QuickFix[] {
   for (const face of ['front', 'back'] as const) {
     for (const f of doc.faces[face]?.features ?? []) {
       if (f.type !== 'pocket') continue
-      const cavity = (f.depth ?? 0) + (f.depthClearance ?? 0)
-      const maxDepth = thickness - MIN_POCKET_FLOOR
-      if (thickness > 0 && cavity > maxDepth) {
-        const safe = Math.max(0.4, Math.round((maxDepth - (f.depthClearance ?? 0)) * 10) / 10)
+      // A sealed pocket (ceiling > 0) sits that far below the surface, so the
+      // ceiling eats into the body too — count it on both sides.
+      const ceiling = f.ceiling ?? 0
+      const cavityBottom = ceiling + (f.depth ?? 0) + (f.depthClearance ?? 0)
+      const maxBottom = thickness - MIN_POCKET_FLOOR
+      if (thickness > 0 && cavityBottom > maxBottom) {
+        const safe = Math.max(0.4, Math.round((maxBottom - ceiling - (f.depthClearance ?? 0)) * 10) / 10)
         out.push({
           id: `pocket-through-${f.id}`, featureId: f.id, face,
           title: `El pocket "${f.name ?? 'pocket'}" perfora la pieza (deja menos de ${MIN_POCKET_FLOOR} mm de piso).`,

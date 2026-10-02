@@ -153,20 +153,44 @@ function activeDoc(state: DocumentStoreState): DocumentV2 | null {
   return tab?.doc ?? null
 }
 
-// Trace warnings arrive as "face/featureId: message" strings (skipped
-// features, degenerate patterns…). Surface them next to the constraints
-// so a silently-dropped feature is visible in the Issues panel.
-function traceWarningIssues(warnings: string[] | undefined): ConstraintIssue[] {
-  return (warnings ?? []).map(w => {
-    const m = w.match(/^(front|back)\/([^:]+): (.*)$/)
-    return {
-      severity: 'warning' as const,
+// A compile reports two distinct things the Studio must NOT conflate:
+//   · `skippedFeatures` — features that produced no geometry. A real omission:
+//     the Core's own verdict() treats these as blockers, and so do we.
+//   · `warnings` — "face/featureId: message" notes (open notch, ignored
+//     scale…). These produce valid geometry and are deliberately NON-blocking
+//     (`compiler-note` in the Core). Promoting them to blockers would make a
+//     printable card read "No imprime".
+// Mirrors src/cardforge/service.py verdict().
+function extraIssues(
+  warnings: string[] | undefined,
+  skippedFeatures: string[] | undefined,
+): ConstraintIssue[] {
+  const skipped = new Set(skippedFeatures ?? [])
+  const out: ConstraintIssue[] = []
+  // Genuine omissions block.
+  for (const fid of skipped) {
+    out.push({
+      severity: 'error',
       code: 'feature-skipped',
+      message: 'Esta feature no generó geometría — se descartó al compilar.',
+      suggestion: 'Revisá su relieve, tamaño o posición, o quitala.',
+      featureId: fid,
+    })
+  }
+  // Everything else is an advisory note (valid geometry); never a blocker.
+  for (const w of warnings ?? []) {
+    const m = w.match(/^(front|back)\/([^:]+): (.*)$/)
+    const featureId = m?.[2]
+    if (featureId && skipped.has(featureId)) continue // already a blocker above
+    out.push({
+      severity: 'warning',
+      code: 'compiler-note',
       message: m ? m[3] : w,
-      featureId: m?.[2],
+      featureId,
       faceId: m?.[1],
-    }
-  })
+    })
+  }
+  return out
 }
 
 async function runCompile(doc: DocumentV2): Promise<void> {
@@ -175,11 +199,12 @@ async function runCompile(doc: DocumentV2): Promise<void> {
   try {
     const res = await compileDocument(doc)
     if (requestId !== requestCounter) return // stale response — drop
+    const extra = extraIssues(res.warnings, res.skippedFeatures)
     if (res.model3mfBase64) {
       useCompileStore.setState({
         status: 'ok',
         model3mfB64: res.model3mfBase64,
-        constraints: [...(res.constraints ?? []), ...traceWarningIssues(res.warnings)],
+        constraints: [...(res.constraints ?? []), ...extra],
         manufacturing: res.manufacturing ?? null,
         stats: res.stats ?? null,
         materials: res.materials ?? [],
@@ -190,7 +215,7 @@ async function runCompile(doc: DocumentV2): Promise<void> {
       const firstError = (res.constraints ?? []).find(c => c.severity === 'error')
       useCompileStore.setState({
         status: 'error',
-        constraints: res.constraints ?? [],
+        constraints: [...(res.constraints ?? []), ...extra],
         manufacturing: res.manufacturing ?? null,
         stats: res.stats ?? null,
         materials: res.materials ?? [],
@@ -199,8 +224,17 @@ async function runCompile(doc: DocumentV2): Promise<void> {
     }
   } catch (e) {
     if (requestId !== requestCounter) return
+    // The compile could not run (e.g. Core unreachable). Clear the previous
+    // result so a stale blocker never outlives the document it described —
+    // the verdict then reads "Sin verificar", not an obsolete "No imprime".
     useCompileStore.setState({
       status: 'error',
+      model3mfB64: null,
+      constraints: [],
+      manufacturing: null,
+      stats: null,
+      materials: [],
+      parts: [],
       error: e instanceof Error ? e.message : String(e),
     })
   }
