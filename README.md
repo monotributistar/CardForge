@@ -79,8 +79,9 @@ pnpm studio:build
 
 ## Status
 
-- **Core:** Feature-complete for v0.1 — 462 tests, STL export, multi-color, manufacturing analysis
-- **Studio:** Foundation — layout and static preview (editing not yet implemented)
+- **Core:** Feature-complete for v0.1 — 462 tests, STL/3MF export, multi-color, manufacturing analysis, Windows-portable compile path
+- **Studio:** Advanced — React + TypeScript IDE with new-card wizard, canvas editing, pockets/holes, SVG multicolor, and live compile against the Core API
+- **Agent / MCP:** MCP server exposes guide, schema, compile, and export tools so an agent can drive CardForge end to end
 - **Documentation:** [docs/](docs/) — architecture, domain model, pipeline, manufacturing, prototype loop
 
 ## Tech Stack
