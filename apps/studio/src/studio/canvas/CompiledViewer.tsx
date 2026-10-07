@@ -54,6 +54,8 @@ export const CompiledViewer: React.FC = () => {
   const activeTab = useDocumentStore(getActiveTab)
   const selectedFeatureId = activeTab?.selectedFeatureId ?? null
   const objectSelected = activeTab?.objectSelected ?? false
+  // The slicer preview snaps to the real layer height the part will print at.
+  const layerHeightMm = Math.max(0.02, activeTab?.doc.manufacturing?.layerHeight ?? 0.2)
 
   const containerRef = useRef<HTMLDivElement>(null)
   const sceneRef = useRef<SceneRefs | null>(null)
@@ -70,6 +72,17 @@ export const CompiledViewer: React.FC = () => {
   const [parts, setParts] = useState<PartInfo[]>([])
   const [parseError, setParseError] = useState<string | null>(null)
 
+  // ── Layer (slicer) preview ────────────────────────────────────────
+  // Clips the model to a Z height, snapped to the real layer height, so you
+  // can scrub through the print layer by layer and see how letters, borders
+  // and pocket ceilings actually resolve. No Core round-trip — it's the same
+  // compiled geometry, cross-sectioned in the viewer.
+  const [layerView, setLayerView] = useState(false)
+  const [singleLayer, setSingleLayer] = useState(false)
+  const [modelHeight, setModelHeight] = useState(0) // mm, model bounding height
+  const totalLayers = Math.max(1, Math.ceil(modelHeight / layerHeightMm - 1e-6))
+  const [layerIdx, setLayerIdx] = useState(1) // 1-based: layers printed so far
+
   // ── Init Three.js ─────────────────────────────────────────────────
   useEffect(() => {
     const el = containerRef.current
@@ -85,6 +98,7 @@ export const CompiledViewer: React.FC = () => {
     const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true })
     renderer.setSize(el.clientWidth, el.clientHeight)
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    renderer.localClippingEnabled = true // used by the layer (slicer) preview
     el.appendChild(renderer.domElement)
 
     const controls = new OrbitControls(camera, renderer.domElement)
@@ -246,6 +260,8 @@ export const CompiledViewer: React.FC = () => {
       s.model = group
       setParts(partList)
       setParseError(null)
+      // Model height (mm) drives the layer slider range.
+      setModelHeight(box.getSize(new THREE.Vector3()).y)
       // Prune stale hidden entries but keep user's choices for stable names
       setHiddenParts(prev => {
         const next = new Set([...prev].filter(n => s.partMeshes.has(n)))
@@ -271,6 +287,8 @@ export const CompiledViewer: React.FC = () => {
   useEffect(() => {
     const s = sceneRef.current
     if (!s) return
+    // Explode and layer-slicing don't mix — the clip plane is world-space.
+    const exp = layerView ? 0 : explosion
     let idx = 0
     s.partMeshes.forEach((meshes, name) => {
       const visible = !hiddenParts.has(name)
@@ -280,11 +298,46 @@ export const CompiledViewer: React.FC = () => {
         for (const m of mats) (m as THREE.MeshPhongMaterial).wireframe = renderMode === 'wireframe'
         const edges = mesh.children.find(c => c.name === '__edges')
         if (edges) edges.visible = renderMode === 'solid-edges'
-        mesh.position.z = (mesh.userData.baseZ as number ?? 0) + idx * explosion * 5
+        mesh.position.z = (mesh.userData.baseZ as number ?? 0) + idx * exp * 5
       }
       idx++
     })
-  }, [renderMode, hiddenParts, explosion, parts])
+  }, [renderMode, hiddenParts, explosion, parts, layerView])
+
+  // ── Layer (slicer) clipping ───────────────────────────────────────
+  // Keep the layer index inside range and default to the full height.
+  useEffect(() => { setLayerIdx(totalLayers) }, [totalLayers])
+
+  useEffect(() => {
+    const s = sceneRef.current
+    if (!s) return
+    // Build the clip planes: cut above the current layer top; optionally also
+    // cut below it to isolate a single printed layer.
+    let planes: THREE.Plane[] = []
+    if (layerView) {
+      const topY = Math.min(modelHeight, layerIdx * layerHeightMm)
+      // keep y <= topY  →  normal (0,-1,0), constant = topY
+      planes = [new THREE.Plane(new THREE.Vector3(0, -1, 0), topY)]
+      if (singleLayer) {
+        const bottomY = Math.max(0, topY - layerHeightMm)
+        // keep y >= bottomY  →  normal (0,1,0), constant = -bottomY
+        planes.push(new THREE.Plane(new THREE.Vector3(0, 1, 0), -bottomY))
+      }
+    }
+    const applied = planes.length ? planes : null
+    s.partMeshes.forEach(meshes => {
+      for (const mesh of meshes) {
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+        for (const m of mats) { m.clippingPlanes = applied; m.needsUpdate = true }
+        const edges = mesh.children.find(c => c.name === '__edges') as THREE.LineSegments | undefined
+        if (edges) {
+          const em = edges.material as THREE.Material
+          em.clippingPlanes = applied
+          em.needsUpdate = true
+        }
+      }
+    })
+  }, [layerView, singleLayer, layerIdx, layerHeightMm, totalLayers, modelHeight, parts])
 
   // ── Highlight the selected part (mirrors 2D/tree selection) ───────
   const selectedLabels = new Set(
@@ -356,18 +409,49 @@ export const CompiledViewer: React.FC = () => {
         <Btn onClick={cycleMode}>
           {renderMode === 'solid' ? 'Solid' : renderMode === 'wireframe' ? 'Wire' : 'Solid+E'}
         </Btn>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#AEB6C0', background: '#1A1E24', border: '1px solid #2A313A', borderRadius: 4, padding: '2px 8px' }}>
-          Explode
-          <input
-            type="range" min={0} max={1} step={0.01} value={explosion}
-            onChange={e => setExplosion(Number(e.target.value))}
-            style={{ width: 70 }}
-          />
-        </label>
+        <Btn
+          onClick={() => setLayerView(v => !v)}
+          style={layerView ? { background: '#C24A1C', color: '#fff', borderColor: '#C24A1C' } : undefined}
+        >Capas</Btn>
+        {!layerView && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#AEB6C0', background: '#1A1E24', border: '1px solid #2A313A', borderRadius: 4, padding: '2px 8px' }}>
+            Explode
+            <input
+              type="range" min={0} max={1} step={0.01} value={explosion}
+              onChange={e => setExplosion(Number(e.target.value))}
+              style={{ width: 70 }}
+            />
+          </label>
+        )}
         <span style={{ fontSize: 10, color: '#5B6673', background: '#1A1E24', border: '1px solid #2A313A', borderRadius: 4, padding: '2px 8px' }}>
           Grid {GRID_MM} mm
         </span>
       </div>
+
+      {/* Layer (slicer) preview control — only while the layer view is on */}
+      {layerView && model3mfB64 && (
+        <div style={{
+          position: 'absolute', top: 44, left: 8, zIndex: 10, width: 230,
+          background: '#1A1E24', border: '1px solid #2A313A', borderRadius: 6, padding: '10px 12px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 2 }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: '#E6E9ED' }}>Capa {layerIdx} / {totalLayers}</span>
+            <span style={{ fontSize: 10, color: '#5B6673' }}>{(layerIdx * layerHeightMm).toFixed(2)} mm</span>
+          </div>
+          <input
+            type="range" min={1} max={totalLayers} step={1} value={Math.min(layerIdx, totalLayers)}
+            onChange={e => setLayerIdx(Number(e.target.value))}
+            style={{ width: '100%', accentColor: '#E8622C' }}
+          />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, color: '#AEB6C0', cursor: 'pointer' }}>
+              <input type="checkbox" checked={singleLayer} onChange={e => setSingleLayer(e.target.checked)} style={{ accentColor: '#E8622C' }} />
+              Solo esta capa
+            </label>
+            <span style={{ fontSize: 9, color: '#5B6673' }}>{layerHeightMm} mm/capa</span>
+          </div>
+        </div>
+      )}
 
       {/* Part legend — click a part in the 3D view or here to inspect it */}
       {parts.length > 0 && (
