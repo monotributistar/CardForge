@@ -13,6 +13,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { ThreeMFLoader } from 'three/examples/jsm/loaders/3MFLoader.js'
 import { useCompileStore } from '../../state/CompileStore'
+import { useEngineStore, refreshEngine } from '../../state/EngineStore'
 import { useDocumentStore, getActiveTab } from '../../state/DocumentStore'
 import type { PartReport } from '../core/CoreClient'
 
@@ -44,6 +45,7 @@ export const CompiledViewer: React.FC = () => {
   const model3mfB64 = useCompileStore(s => s.model3mfB64)
   const status = useCompileStore(s => s.status)
   const compileError = useCompileStore(s => s.error)
+  const engineOffline = useEngineStore(s => s.status === 'offline')
   const compiledParts = useCompileStore(s => s.parts)
   const materials = useCompileStore(s => s.materials)
 
@@ -52,6 +54,8 @@ export const CompiledViewer: React.FC = () => {
   const activeTab = useDocumentStore(getActiveTab)
   const selectedFeatureId = activeTab?.selectedFeatureId ?? null
   const objectSelected = activeTab?.objectSelected ?? false
+  // The slicer preview snaps to the real layer height the part will print at.
+  const layerHeightMm = Math.max(0.02, activeTab?.doc.manufacturing?.layerHeight ?? 0.2)
 
   const containerRef = useRef<HTMLDivElement>(null)
   const sceneRef = useRef<SceneRefs | null>(null)
@@ -68,13 +72,24 @@ export const CompiledViewer: React.FC = () => {
   const [parts, setParts] = useState<PartInfo[]>([])
   const [parseError, setParseError] = useState<string | null>(null)
 
+  // ── Layer (slicer) preview ────────────────────────────────────────
+  // Clips the model to a Z height, snapped to the real layer height, so you
+  // can scrub through the print layer by layer and see how letters, borders
+  // and pocket ceilings actually resolve. No Core round-trip — it's the same
+  // compiled geometry, cross-sectioned in the viewer.
+  const [layerView, setLayerView] = useState(false)
+  const [singleLayer, setSingleLayer] = useState(false)
+  const [modelHeight, setModelHeight] = useState(0) // mm, model bounding height
+  const totalLayers = Math.max(1, Math.ceil(modelHeight / layerHeightMm - 1e-6))
+  const [layerIdx, setLayerIdx] = useState(1) // 1-based: layers printed so far
+
   // ── Init Three.js ─────────────────────────────────────────────────
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
 
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color('#0d1117')
+    scene.background = new THREE.Color('#16191D')
 
     const camera = new THREE.PerspectiveCamera(45, el.clientWidth / Math.max(1, el.clientHeight), 0.1, 1000)
     camera.position.set(80, 40, 120)
@@ -83,6 +98,7 @@ export const CompiledViewer: React.FC = () => {
     const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true })
     renderer.setSize(el.clientWidth, el.clientHeight)
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    renderer.localClippingEnabled = true // used by the layer (slicer) preview
     el.appendChild(renderer.domElement)
 
     const controls = new OrbitControls(camera, renderer.domElement)
@@ -99,7 +115,7 @@ export const CompiledViewer: React.FC = () => {
     scene.add(dir2)
 
     // Bed reference: grid at y=0, one cell = GRID_MM millimeters
-    const grid = new THREE.GridHelper(160, 160 / GRID_MM, '#3d444d', '#21262d')
+    const grid = new THREE.GridHelper(160, 160 / GRID_MM, '#2A313A', '#1E232A')
     grid.position.y = 0
     scene.add(grid)
 
@@ -220,7 +236,7 @@ export const CompiledViewer: React.FC = () => {
         } else {
           s.partMeshes.set(name, [obj])
           const mat = obj.material as THREE.MeshPhongMaterial
-          const color = mat?.color ? `#${mat.color.getHexString()}` : '#8b949e'
+          const color = mat?.color ? `#${mat.color.getHexString()}` : '#AEB6C0'
           partList.push({ name, color })
         }
         // Edge overlay (as child so it inherits the mesh transform)
@@ -244,6 +260,8 @@ export const CompiledViewer: React.FC = () => {
       s.model = group
       setParts(partList)
       setParseError(null)
+      // Model height (mm) drives the layer slider range.
+      setModelHeight(box.getSize(new THREE.Vector3()).y)
       // Prune stale hidden entries but keep user's choices for stable names
       setHiddenParts(prev => {
         const next = new Set([...prev].filter(n => s.partMeshes.has(n)))
@@ -269,6 +287,8 @@ export const CompiledViewer: React.FC = () => {
   useEffect(() => {
     const s = sceneRef.current
     if (!s) return
+    // Explode and layer-slicing don't mix — the clip plane is world-space.
+    const exp = layerView ? 0 : explosion
     let idx = 0
     s.partMeshes.forEach((meshes, name) => {
       const visible = !hiddenParts.has(name)
@@ -278,11 +298,46 @@ export const CompiledViewer: React.FC = () => {
         for (const m of mats) (m as THREE.MeshPhongMaterial).wireframe = renderMode === 'wireframe'
         const edges = mesh.children.find(c => c.name === '__edges')
         if (edges) edges.visible = renderMode === 'solid-edges'
-        mesh.position.z = (mesh.userData.baseZ as number ?? 0) + idx * explosion * 5
+        mesh.position.z = (mesh.userData.baseZ as number ?? 0) + idx * exp * 5
       }
       idx++
     })
-  }, [renderMode, hiddenParts, explosion, parts])
+  }, [renderMode, hiddenParts, explosion, parts, layerView])
+
+  // ── Layer (slicer) clipping ───────────────────────────────────────
+  // Keep the layer index inside range and default to the full height.
+  useEffect(() => { setLayerIdx(totalLayers) }, [totalLayers])
+
+  useEffect(() => {
+    const s = sceneRef.current
+    if (!s) return
+    // Build the clip planes: cut above the current layer top; optionally also
+    // cut below it to isolate a single printed layer.
+    let planes: THREE.Plane[] = []
+    if (layerView) {
+      const topY = Math.min(modelHeight, layerIdx * layerHeightMm)
+      // keep y <= topY  →  normal (0,-1,0), constant = topY
+      planes = [new THREE.Plane(new THREE.Vector3(0, -1, 0), topY)]
+      if (singleLayer) {
+        const bottomY = Math.max(0, topY - layerHeightMm)
+        // keep y >= bottomY  →  normal (0,1,0), constant = -bottomY
+        planes.push(new THREE.Plane(new THREE.Vector3(0, 1, 0), -bottomY))
+      }
+    }
+    const applied = planes.length ? planes : null
+    s.partMeshes.forEach(meshes => {
+      for (const mesh of meshes) {
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+        for (const m of mats) { m.clippingPlanes = applied; m.needsUpdate = true }
+        const edges = mesh.children.find(c => c.name === '__edges') as THREE.LineSegments | undefined
+        if (edges) {
+          const em = edges.material as THREE.Material
+          em.clippingPlanes = applied
+          em.needsUpdate = true
+        }
+      }
+    })
+  }, [layerView, singleLayer, layerIdx, layerHeightMm, totalLayers, modelHeight, parts])
 
   // ── Highlight the selected part (mirrors 2D/tree selection) ───────
   const selectedLabels = new Set(
@@ -354,22 +409,53 @@ export const CompiledViewer: React.FC = () => {
         <Btn onClick={cycleMode}>
           {renderMode === 'solid' ? 'Solid' : renderMode === 'wireframe' ? 'Wire' : 'Solid+E'}
         </Btn>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#8b949e', background: '#161b22', border: '1px solid #30363d', borderRadius: 4, padding: '2px 8px' }}>
-          Explode
-          <input
-            type="range" min={0} max={1} step={0.01} value={explosion}
-            onChange={e => setExplosion(Number(e.target.value))}
-            style={{ width: 70 }}
-          />
-        </label>
-        <span style={{ fontSize: 10, color: '#484f58', background: '#161b22', border: '1px solid #30363d', borderRadius: 4, padding: '2px 8px' }}>
+        <Btn
+          onClick={() => setLayerView(v => !v)}
+          style={layerView ? { background: '#C24A1C', color: '#fff', borderColor: '#C24A1C' } : undefined}
+        >Capas</Btn>
+        {!layerView && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#AEB6C0', background: '#1A1E24', border: '1px solid #2A313A', borderRadius: 4, padding: '2px 8px' }}>
+            Explode
+            <input
+              type="range" min={0} max={1} step={0.01} value={explosion}
+              onChange={e => setExplosion(Number(e.target.value))}
+              style={{ width: 70 }}
+            />
+          </label>
+        )}
+        <span style={{ fontSize: 10, color: '#5B6673', background: '#1A1E24', border: '1px solid #2A313A', borderRadius: 4, padding: '2px 8px' }}>
           Grid {GRID_MM} mm
         </span>
       </div>
 
+      {/* Layer (slicer) preview control — only while the layer view is on */}
+      {layerView && model3mfB64 && (
+        <div style={{
+          position: 'absolute', top: 44, left: 8, zIndex: 10, width: 230,
+          background: '#1A1E24', border: '1px solid #2A313A', borderRadius: 6, padding: '10px 12px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 2 }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: '#E6E9ED' }}>Capa {layerIdx} / {totalLayers}</span>
+            <span style={{ fontSize: 10, color: '#5B6673' }}>{(layerIdx * layerHeightMm).toFixed(2)} mm</span>
+          </div>
+          <input
+            type="range" min={1} max={totalLayers} step={1} value={Math.min(layerIdx, totalLayers)}
+            onChange={e => setLayerIdx(Number(e.target.value))}
+            style={{ width: '100%', accentColor: '#E8622C' }}
+          />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, color: '#AEB6C0', cursor: 'pointer' }}>
+              <input type="checkbox" checked={singleLayer} onChange={e => setSingleLayer(e.target.checked)} style={{ accentColor: '#E8622C' }} />
+              Solo esta capa
+            </label>
+            <span style={{ fontSize: 9, color: '#5B6673' }}>{layerHeightMm} mm/capa</span>
+          </div>
+        </div>
+      )}
+
       {/* Part legend — click a part in the 3D view or here to inspect it */}
       {parts.length > 0 && (
-        <div style={{ position: 'absolute', top: 8, right: 8, zIndex: 10, background: '#161b22', border: '1px solid #30363d', borderRadius: 6, padding: 8 }}>
+        <div style={{ position: 'absolute', top: 8, right: 8, zIndex: 10, background: '#1A1E24', border: '1px solid #2A313A', borderRadius: 6, padding: 8 }}>
           {parts.map(p => {
             const visible = !hiddenParts.has(p.name)
             const info = compiledParts.find(cp => cp.label === p.name)
@@ -387,10 +473,10 @@ export const CompiledViewer: React.FC = () => {
                   title="Show/hide part"
                   style={{
                     width: 12, height: 12, borderRadius: 2,
-                    background: visible ? p.color : '#30363d',
+                    background: visible ? p.color : '#2A313A',
                     border: `1px solid ${p.color}`,
                   }} />
-                <span style={{ fontSize: 11, color: isSel ? '#58a6ff' : visible ? '#c9d1d9' : '#484f58' }}>{p.name}</span>
+                <span style={{ fontSize: 11, color: isSel ? '#E8622C' : visible ? '#E6E9ED' : '#5B6673' }}>{p.name}</span>
               </div>
             )
           })}
@@ -399,15 +485,15 @@ export const CompiledViewer: React.FC = () => {
 
       {/* Selected part dimensions (mm) */}
       {selectedParts.length > 0 && (
-        <div style={{ position: 'absolute', bottom: 8, right: 8, zIndex: 10, background: '#161b22', border: '1px solid #30363d', borderRadius: 6, padding: '6px 10px', fontSize: 11, color: '#c9d1d9' }}>
+        <div style={{ position: 'absolute', bottom: 8, right: 8, zIndex: 10, background: '#1A1E24', border: '1px solid #2A313A', borderRadius: 6, padding: '6px 10px', fontSize: 11, color: '#E6E9ED' }}>
           {selectedParts.map(p => {
             const mat = matById.get(p.material)
             return (
               <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '1px 0' }}>
-                <span style={{ width: 10, height: 10, borderRadius: 2, background: mat?.color ?? '#8b949e', flexShrink: 0 }} />
-                <span style={{ color: '#8b949e' }}>{p.label}</span>
+                <span style={{ width: 10, height: 10, borderRadius: 2, background: mat?.color ?? '#AEB6C0', flexShrink: 0 }} />
+                <span style={{ color: '#AEB6C0' }}>{p.label}</span>
                 <span>{fmt(p.sizeMm[0])} × {fmt(p.sizeMm[1])} × {fmt(p.sizeMm[2])} mm</span>
-                <span style={{ color: '#484f58' }}>z {fmt(p.zMm[0])}–{fmt(p.zMm[1])}</span>
+                <span style={{ color: '#5B6673' }}>z {fmt(p.zMm[0])}–{fmt(p.zMm[1])}</span>
               </div>
             )
           })}
@@ -416,20 +502,35 @@ export const CompiledViewer: React.FC = () => {
 
       {/* Status overlays */}
       {status === 'compiling' && (
-        <div style={{ position: 'absolute', bottom: 8, left: 8, zIndex: 10, color: '#d29922', fontSize: 11, background: '#161b22', border: '1px solid #30363d', borderRadius: 4, padding: '2px 8px' }}>
+        <div style={{ position: 'absolute', bottom: 8, left: 8, zIndex: 10, color: '#E0A32E', fontSize: 11, background: '#1A1E24', border: '1px solid #2A313A', borderRadius: 4, padding: '2px 8px' }}>
           Compiling…
         </div>
       )}
       {parseError && (
-        <div style={{ position: 'absolute', bottom: 8, left: 8, right: 8, zIndex: 10, color: '#f85149', fontSize: 11, background: '#161b22', border: '1px solid #f85149', borderRadius: 4, padding: '4px 8px' }}>
+        <div style={{ position: 'absolute', bottom: 8, left: 8, right: 8, zIndex: 10, color: '#E04343', fontSize: 11, background: '#1A1E24', border: '1px solid #E04343', borderRadius: 4, padding: '4px 8px' }}>
           Failed to parse 3MF: {parseError}
         </div>
       )}
-      {!model3mfB64 && !parseError && (
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 5, color: '#484f58', fontSize: 13, pointerEvents: 'none' }}>
+      {!model3mfB64 && !parseError && engineOffline && (
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 5, color: '#AEB6C0', fontSize: 13 }}>
+          <div style={{ textAlign: 'center', maxWidth: 320, pointerEvents: 'auto' }}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>🧩</div>
+            <div style={{ color: '#E6E9ED', marginBottom: 4 }}>La vista 3D necesita el motor</div>
+            <div style={{ fontSize: 11, color: '#5B6673', lineHeight: '16px', marginBottom: 10 }}>
+              Podés diseñar, validar y corregir sin conexión. Conectá el motor para ver y exportar la geometría 3D.
+            </div>
+            <button
+              onClick={() => void refreshEngine()}
+              style={{ background: '#C24A1C', color: '#fff', border: 'none', borderRadius: 5, padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+            >Conectar motor</button>
+          </div>
+        </div>
+      )}
+      {!model3mfB64 && !parseError && !engineOffline && (
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 5, color: '#5B6673', fontSize: 13, pointerEvents: 'none' }}>
           <div style={{ textAlign: 'center' }}>
             <div style={{ fontSize: 32, marginBottom: 8 }}>📦</div>
-            <div>{status === 'error' ? 'Compile failed' : 'No compiled model yet'}</div>
+            <div>{status === 'error' ? 'No se pudo compilar' : status === 'compiling' ? 'Compilando…' : 'Todavía no hay modelo 3D'}</div>
             {status === 'error' && compileError && (
               <div style={{ fontSize: 11, marginTop: 4, maxWidth: 360 }}>{compileError}</div>
             )}
@@ -444,7 +545,7 @@ export const CompiledViewer: React.FC = () => {
 
 const Btn: React.FC<{ onClick: () => void; children: React.ReactNode; style?: React.CSSProperties }> = ({ onClick, children, style }) => (
   <button onClick={onClick} style={{
-    background: '#21262d', color: '#c9d1d9', border: '1px solid #30363d',
+    background: '#1E232A', color: '#E6E9ED', border: '1px solid #2A313A',
     padding: '2px 10px', borderRadius: 4, cursor: 'pointer', fontSize: 11, ...style,
   }}>{children}</button>
 )

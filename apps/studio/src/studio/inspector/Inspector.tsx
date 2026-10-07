@@ -44,7 +44,7 @@ export const Inspector: React.FC = () => {
   const found = tab.selectedFeatureId && !tab.objectSelected ? findFeature(doc, tab.selectedFeatureId) : null
 
   return (
-    <div style={{ height: '100%', overflowY: 'auto', padding: 10, fontSize: 12, color: '#c9d1d9' }}>
+    <div style={{ height: '100%', overflowY: 'auto', padding: 10, fontSize: 12, color: '#E6E9ED' }}>
       {found
         ? <FeatureInspector doc={doc} feature={found.feature} selectedIds={tab.selectedFeatureIds} applyEdit={applyEdit} />
         : <DocumentInspector doc={doc} applyEdit={applyEdit} />}
@@ -53,7 +53,7 @@ export const Inspector: React.FC = () => {
 }
 
 const Empty: React.FC<{ text: string }> = ({ text }) => (
-  <div style={{ padding: 16, color: '#484f58', fontSize: 12 }}>{text}</div>
+  <div style={{ padding: 16, color: '#5B6673', fontSize: 12 }}>{text}</div>
 )
 
 // ── Feature inspector ────────────────────────────────────────────────
@@ -188,7 +188,7 @@ const ReliefEditor: React.FC<{ feature: Feature; materials: Material[]; edit: Ed
           })} />
       </Row>
       {isBack && relief.mode === 'emboss' && (
-        <div style={{ fontSize: 11, color: '#f85149', padding: '2px 0' }}>
+        <div style={{ fontSize: 11, color: '#E04343', padding: '2px 0' }}>
           Emboss is not printable on the bed-facing face — pick deboss, cut or flush.
         </div>
       )}
@@ -277,7 +277,7 @@ const BackingEditor: React.FC<{ feature: Feature; materials: Material[]; edit: E
           </Row>
         </>
       )}
-      <div style={{ fontSize: 11, color: '#484f58', padding: '2px 0' }}>
+      <div style={{ fontSize: 11, color: '#5B6673', padding: '2px 0' }}>
         Adds a solid pad so the feature isn't left floating over a lattice base.
         Thickness auto: full column over lattice · 0.6 mm plate on a solid base.
       </div>
@@ -337,7 +337,7 @@ const FontEditor: React.FC<{ feature: TextBlockFeature | TextPatternFeature; edi
       </Row>
     )}
     {weight && !isVariable && current && known && (
-      <div style={{ fontSize: 10, color: '#8b949e', padding: '0 0 2px' }}>
+      <div style={{ fontSize: 10, color: '#AEB6C0', padding: '0 0 2px' }}>
         {(() => {
           const w = fonts.find(f => f.family === current)?.weights ?? []
           return w.length > 1
@@ -379,7 +379,7 @@ const TextPatternEditor: React.FC<{ feature: TextPatternFeature; edit: EditFn }>
           })} />
       </Row>
       <Row label="Angle" hint="Pattern rotation in degrees"><NumInput value={feature.angle ?? 0} step={1} onCommit={v => edit<TextPatternFeature>(f => { f.angle = v })} /></Row>
-      <div style={{ fontSize: 10, color: '#484f58', padding: '2px 0' }}>
+      <div style={{ fontSize: 10, color: '#5B6673', padding: '2px 0' }}>
         Gap = separación entre repeticiones — se mantiene al cambiar el texto.
       </div>
     </Section>
@@ -412,7 +412,7 @@ const PatternEditor: React.FC<{ feature: PatternFeature; edit: EditFn }> = ({ fe
           <IconPicker featureId={feature.id} />
         </Row>
         <Row label="Upload .svg" hint="Load an SVG file from your computer">
-          <input type="file" accept=".svg,image/svg+xml" onChange={handleSvgUpload} style={{ fontSize: 11, color: '#8b949e', maxWidth: 160 }} />
+          <input type="file" accept=".svg,image/svg+xml" onChange={handleSvgUpload} style={{ fontSize: 11, color: '#AEB6C0', maxWidth: 160 }} />
         </Row>
         {feature.svgInline && (
           <Row label="Motif" hint="SVG artwork repeated as the pattern motif"><ReadOnly value={`${Object.keys(feature.colorMap ?? {}).length || 1} color(s), ${feature.svgInline.length} chars`} /></Row>
@@ -495,17 +495,17 @@ const IconPicker: React.FC<{ featureId: string }> = ({ featureId }) => {
     <div>
       {(Object.keys(ICON_CATEGORY_LABELS) as IconCategory[]).map(cat => (
         <div key={cat} style={{ marginBottom: 4 }}>
-          <div style={{ fontSize: 10, color: '#484f58', padding: '2px 0' }}>{ICON_CATEGORY_LABELS[cat]}</div>
+          <div style={{ fontSize: 10, color: '#5B6673', padding: '2px 0' }}>{ICON_CATEGORY_LABELS[cat]}</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
             {ICON_LIBRARY.filter(i => i.category === cat).map(icon => (
               <button key={icon.id} title={icon.name} onClick={() => apply(icon)}
                 style={{
                   width: 26, height: 26, padding: 4, cursor: 'pointer',
-                  background: '#161b22', border: '1px solid #30363d', borderRadius: 4,
-                  color: '#8b949e', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: '#1A1E24', border: '1px solid #2A313A', borderRadius: 4,
+                  color: '#AEB6C0', display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}
-                onMouseEnter={e => { e.currentTarget.style.color = '#c9d1d9'; e.currentTarget.style.borderColor = '#8b949e' }}
-                onMouseLeave={e => { e.currentTarget.style.color = '#8b949e'; e.currentTarget.style.borderColor = '#30363d' }}>
+                onMouseEnter={e => { e.currentTarget.style.color = '#E6E9ED'; e.currentTarget.style.borderColor = '#AEB6C0' }}
+                onMouseLeave={e => { e.currentTarget.style.color = '#AEB6C0'; e.currentTarget.style.borderColor = '#2A313A' }}>
                 <svg viewBox={`0 0 ${icon.vb ?? 24} ${icon.vb ?? 24}`} width="16" height="16">
                   <path d={icon.d} fill="currentColor" />
                 </svg>
@@ -547,7 +547,7 @@ const IconEditor: React.FC<{ feature: IconFeature; materials: Material[]; edit: 
           onCommit={v => edit<IconFeature>(f => { if (v) { f.svgAsset = v; delete f.svgInline } else delete f.svgAsset })} />
       </Row>
       <Row label="Upload .svg" hint="Load an SVG file from your computer">
-        <input type="file" accept=".svg,image/svg+xml" onChange={handleUpload} style={{ fontSize: 11, color: '#8b949e', maxWidth: 160 }} />
+        <input type="file" accept=".svg,image/svg+xml" onChange={handleUpload} style={{ fontSize: 11, color: '#AEB6C0', maxWidth: 160 }} />
       </Row>
       {feature.svgInline && (
         <Row label="Inline SVG" hint="SVG stored inside the document"><ReadOnly value={`${feature.svgInline.length} chars`} /></Row>
@@ -613,7 +613,7 @@ const HoleEditor: React.FC<{ feature: HoleFeature; edit: EditFn }> = ({ feature,
   const t = feature.holeType
   return (
     <Section title="Hole">
-      <div style={{ fontSize: 11, color: '#8b949e', padding: '2px 0 6px' }}>
+      <div style={{ fontSize: 11, color: '#AEB6C0', padding: '2px 0 6px' }}>
         Through-cut across the whole thickness. Enable the tab to add material
         around the hole — that lets it sit on (or past) the card edge.
       </div>
@@ -715,7 +715,7 @@ const PocketEditor: React.FC<{
 
   return (
     <Section title="Pocket">
-      <div style={{ fontSize: 11, color: '#8b949e', padding: '2px 0 6px' }}>
+      <div style={{ fontSize: 11, color: '#AEB6C0', padding: '2px 0 6px' }}>
         A blind cavity that houses an insert. Give it the insert's real size —
         the clearance below is what opens the bore up so it actually fits.
       </div>
@@ -743,7 +743,7 @@ const PocketEditor: React.FC<{
           onCommit={v => edit<PocketFeature>(f => { f.depth = v })} />
       </Row>
 
-      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.6, textTransform: 'uppercase', color: '#8b949e', margin: '10px 0 6px' }}>
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.6, textTransform: 'uppercase', color: '#AEB6C0', margin: '10px 0 6px' }}>
         Tolerance
       </div>
       <Row label="Fit" hint="Preset slack for the bore — tune the numbers below for your printer">
@@ -763,9 +763,9 @@ const PocketEditor: React.FC<{
         <NumInput value={depthClearance} step={0.05} min={0}
           onCommit={v => edit<PocketFeature>(f => { f.depthClearance = v })} />
       </Row>
-      {clearance <= 0 && note('No clearance: the bore is cut at the exact nominal diameter and the insert will not go in.', '#d29922')}
+      {clearance <= 0 && note('No clearance: the bore is cut at the exact nominal diameter and the insert will not go in.', '#E0A32E')}
 
-      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.6, textTransform: 'uppercase', color: '#8b949e', margin: '10px 0 6px' }}>
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.6, textTransform: 'uppercase', color: '#AEB6C0', margin: '10px 0 6px' }}>
         Placement
       </div>
       <Row label="Ceiling (mm)" hint="Material left over the pocket. 0 opens it at the surface; more than 0 seals the insert inside and the print must be paused to drop it in">
@@ -776,14 +776,14 @@ const PocketEditor: React.FC<{
       <Row label="Bore cut"><ReadOnly value={`Ø${bore.toFixed(2)} × ${cavityDepth.toFixed(2)} mm deep`} /></Row>
       <Row label="Floor left"><ReadOnly value={`${floor.toFixed(2)} mm`} /></Row>
       {floor <= 0
-        ? note(`The pocket needs ${(ceiling + cavityDepth).toFixed(2)}mm but the object is only ${thickness}mm thick — it breaks through the other face.`, '#f85149')
+        ? note(`The pocket needs ${(ceiling + cavityDepth).toFixed(2)}mm but the object is only ${thickness}mm thick — it breaks through the other face.`, '#E04343')
         : thinnerThanMin(floor)
-          ? note(`Only ${floor.toFixed(2)}mm of floor is left; use at least ${minWall}mm or it will crack.`, '#d29922')
+          ? note(`Only ${floor.toFixed(2)}mm of floor is left; use at least ${minWall}mm or it will crack.`, '#E0A32E')
           : null}
       {ceiling > 0 && (
         <>
-          {thinnerThanMin(ceiling) && note(`The ${ceiling.toFixed(2)}mm lid has to bridge the whole bore; use at least ${minWall}mm.`, '#d29922')}
-          {note(`Sealed pocket: pause the print at z = ${pauseZ.toFixed(2)}mm to place the ${insert === 'rfid' ? 'tag' : insert}, then resume.`, '#8b949e')}
+          {thinnerThanMin(ceiling) && note(`The ${ceiling.toFixed(2)}mm lid has to bridge the whole bore; use at least ${minWall}mm.`, '#E0A32E')}
+          {note(`Sealed pocket: pause the print at z = ${pauseZ.toFixed(2)}mm to place the ${insert === 'rfid' ? 'tag' : insert}, then resume.`, '#AEB6C0')}
         </>
       )}
     </Section>
@@ -839,7 +839,7 @@ const CornerRadiusEditor: React.FC<{ outline: RoundedRect; applyEdit: ApplyEdit 
               const o = d.object.outline
               if (o.type === 'rounded-rect') delete o.corners
             })}
-            style={{ alignSelf: 'flex-start', background: '#21262d', color: '#8b949e', border: '1px solid #30363d', borderRadius: 4, padding: '2px 8px', fontSize: 11, cursor: 'pointer' }}
+            style={{ alignSelf: 'flex-start', background: '#1E232A', color: '#AEB6C0', border: '1px solid #2A313A', borderRadius: 4, padding: '2px 8px', fontSize: 11, cursor: 'pointer' }}
           >Reset to uniform</button>
         </div>
       )}
@@ -955,7 +955,7 @@ const ManufacturingEditor: React.FC<{ doc: DocumentV2; applyEdit: ApplyEdit }> =
       <Row label="Layer height" hint="Printing layer height, in mm">
         <NumInput value={layerHeight} step={0.02} onCommit={v => editMfg(m => { m.layerHeight = v })} />
       </Row>
-      <div style={{ fontSize: 11, color: '#484f58', padding: '2px 0' }}>
+      <div style={{ fontSize: 11, color: '#5B6673', padding: '2px 0' }}>
         Min detail ≈ nozzle — drives the detail-size alerts.
       </div>
     </Section>
@@ -1021,7 +1021,7 @@ const DocumentInspector: React.FC<{ doc: DocumentV2; applyEdit: ApplyEdit }> = (
         {outline.type === 'path' && (
           <>
             <Row label="Upload .svg" hint="Use an SVG file as the card shape — its colors extrude in their own materials">
-              <input type="file" accept=".svg,image/svg+xml" style={{ fontSize: 11, color: '#8b949e', maxWidth: 160 }}
+              <input type="file" accept=".svg,image/svg+xml" style={{ fontSize: 11, color: '#AEB6C0', maxWidth: 160 }}
                 onChange={e => {
                   const file = e.target.files?.[0]
                   if (!file) return
@@ -1101,8 +1101,8 @@ const DocumentInspector: React.FC<{ doc: DocumentV2; applyEdit: ApplyEdit }> = (
 // ── Key/value editors ────────────────────────────────────────────────
 
 const kvInputStyle: React.CSSProperties = {
-  flex: 1, minWidth: 0, background: '#0d1117', color: '#c9d1d9',
-  border: '1px solid #30363d', borderRadius: 4, padding: '3px 6px', fontSize: 11,
+  flex: 1, minWidth: 0, background: '#16191D', color: '#E6E9ED',
+  border: '1px solid #2A313A', borderRadius: 4, padding: '3px 6px', fontSize: 11,
 }
 
 const StringMapEditor: React.FC<{
@@ -1134,7 +1134,7 @@ const StringMapEditor: React.FC<{
           while (key in value) key = `key${++i}`
           onCommit({ ...value, [key]: '' })
         }}
-        style={{ alignSelf: 'flex-start', background: '#21262d', color: '#8b949e', border: '1px solid #30363d', borderRadius: 4, padding: '2px 8px', fontSize: 11, cursor: 'pointer' }}
+        style={{ alignSelf: 'flex-start', background: '#1E232A', color: '#AEB6C0', border: '1px solid #2A313A', borderRadius: 4, padding: '2px 8px', fontSize: 11, cursor: 'pointer' }}
       >+ Add</button>
     </div>
   )
@@ -1179,7 +1179,7 @@ const ColorMapEditor: React.FC<{
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, width: '100%' }}>
       {entries.map(([hex, matId]) => (
         <div key={hex} style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-          <span style={{ width: 12, height: 12, borderRadius: 2, background: hex, border: '1px solid #30363d', flexShrink: 0 }} />
+          <span style={{ width: 12, height: 12, borderRadius: 2, background: hex, border: '1px solid #2A313A', flexShrink: 0 }} />
           <CommitInput style={{ ...kvInputStyle, maxWidth: 76 }} value={hex} placeholder="#ffffff" onCommit={nk => rename(hex, nk)} />
           <select
             value={matId}
@@ -1198,7 +1198,7 @@ const ColorMapEditor: React.FC<{
           while (hex in value) hex = `#fffff${(++i).toString(16)}`
           onCommit({ ...value, [hex]: materials[0]?.id ?? '' })
         }}
-        style={{ alignSelf: 'flex-start', background: '#21262d', color: '#8b949e', border: '1px solid #30363d', borderRadius: 4, padding: '2px 8px', fontSize: 11, cursor: 'pointer' }}
+        style={{ alignSelf: 'flex-start', background: '#1E232A', color: '#AEB6C0', border: '1px solid #2A313A', borderRadius: 4, padding: '2px 8px', fontSize: 11, cursor: 'pointer' }}
       >+ Add mapping</button>
     </div>
   )
@@ -1207,6 +1207,6 @@ const ColorMapEditor: React.FC<{
 
 const IconBtn: React.FC<{ title: string; onClick: () => void; children: React.ReactNode }> = ({ title, onClick, children }) => (
   <button title={title} onClick={onClick} style={{
-    background: 'transparent', color: '#8b949e', border: 'none', cursor: 'pointer', fontSize: 11, padding: '0 2px', flexShrink: 0,
+    background: 'transparent', color: '#AEB6C0', border: 'none', cursor: 'pointer', fontSize: 11, padding: '0 2px', flexShrink: 0,
   }}>{children}</button>
 )

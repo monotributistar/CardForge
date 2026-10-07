@@ -26,17 +26,23 @@ export const Splash: React.FC = () => {
     <Overlay onClose={closeSplash}>
       <div style={{
         width: 760, maxWidth: '94vw', maxHeight: '90vh', overflowY: 'auto',
-        background: '#161b22', border: '1px solid #30363d', borderRadius: 12,
+        background: '#1A1E24', border: '1px solid #2A313A', borderRadius: 12,
         boxShadow: '0 12px 40px rgba(0,0,0,0.6)', display: 'flex', flexDirection: 'column',
       }}>
         <div style={{ display: 'flex', flexDirection: narrow ? 'column' : 'row' }}>
           {/* ── Left: brand + actions ─────────────────────────────── */}
           <div style={{ flex: 1.1, padding: '28px 28px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 2 }}>
-              <span style={{ fontSize: 34, lineHeight: 1 }}>◨</span>
+              <svg width="38" height="38" viewBox="0 0 112 112" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="CardForge">
+                <rect x="30" y="22" width="60" height="40" rx="8" fill="#2A313A" />
+                <rect x="21" y="34" width="60" height="40" rx="8" fill="#3A434F" />
+                <rect x="12" y="46" width="60" height="40" rx="8" fill="#1B1F25" stroke="#E8622C" strokeWidth="3" />
+                <path d="M26 66 h20 M36 56 v20" stroke="#E8622C" strokeWidth="3" strokeLinecap="round" />
+                <circle cx="88" cy="30" r="8" fill="#E8622C" />
+              </svg>
               <div>
-                <div style={{ fontSize: 20, fontWeight: 700, color: '#e6edf3' }}>CardForge <span style={{ color: '#58a6ff' }}>Studio</span></div>
-                <div style={{ fontSize: 12, color: '#8b949e' }}>Design multicolor 3D-printed cards, tags & badges</div>
+                <div style={{ fontFamily: 'var(--cf-font-display)', fontSize: 22, fontWeight: 700, letterSpacing: '-0.02em', color: '#F2F4F7' }}>Card<span style={{ color: '#E8622C' }}>Forge</span> <span style={{ color: '#AEB6C0', fontWeight: 600 }}>Studio</span></div>
+                <div style={{ fontSize: 12, color: '#AEB6C0' }}>Del documento a la pieza — tarjetas, llaveros, credenciales y señalética</div>
               </div>
             </div>
 
@@ -52,7 +58,7 @@ export const Splash: React.FC = () => {
               <span style={{ fontSize: 18 }}>📂</span>
               <span>
                 <div style={{ fontWeight: 600 }}>Open file…</div>
-                <div style={{ fontSize: 11, color: '#8b949e' }}>Load a .cardforge.json document</div>
+                <div style={{ fontSize: 11, color: '#AEB6C0' }}>Load a .cardforge.json document</div>
               </span>
             </Btn>
 
@@ -66,21 +72,21 @@ export const Splash: React.FC = () => {
               <span style={{ fontSize: 18 }}>☕</span>
               <span>
                 <div style={{ fontWeight: 600 }}>Support CardForge</div>
-                <div style={{ fontSize: 11, color: '#8b949e' }}>{DONATION_URL ? 'Buy the project a coffee' : 'Donations — coming soon'}</div>
+                <div style={{ fontSize: 11, color: '#AEB6C0' }}>{DONATION_URL ? 'Buy the project a coffee' : 'Donations — coming soon'}</div>
               </span>
             </Btn>
           </div>
 
           {/* ── Right: recent documents ───────────────────────────── */}
           <div style={{
-            flex: 1, padding: '28px 24px 20px', borderLeft: narrow ? 'none' : '1px solid #21262d',
-            borderTop: narrow ? '1px solid #21262d' : 'none', minWidth: 0,
+            flex: 1, padding: '28px 24px 20px', borderLeft: narrow ? 'none' : '1px solid #1E232A',
+            borderTop: narrow ? '1px solid #1E232A' : 'none', minWidth: 0,
           }}>
-            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, color: '#8b949e', marginBottom: 10 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, color: '#AEB6C0', marginBottom: 10 }}>
               Recent
             </div>
             {docs.length === 0 && (
-              <div style={{ fontSize: 12, color: '#484f58', padding: '8px 0' }}>
+              <div style={{ fontSize: 12, color: '#5B6673', padding: '8px 0' }}>
                 Nothing here yet — documents auto-save in your browser as you work.
               </div>
             )}
@@ -89,13 +95,13 @@ export const Splash: React.FC = () => {
                 <div
                   key={d.id}
                   onClick={() => openRecent(d.id)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 8px', cursor: 'pointer', borderRadius: 6, fontSize: 13, color: '#c9d1d9' }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#21262d' }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 8px', cursor: 'pointer', borderRadius: 6, fontSize: 13, color: '#E6E9ED' }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#1E232A' }}
                   onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
                 >
-                  <span style={{ color: '#8b949e', flexShrink: 0 }}>🗂</span>
+                  <span style={{ color: '#AEB6C0', flexShrink: 0 }}>🗂</span>
                   <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name}</span>
-                  <span style={{ fontSize: 10, color: '#484f58', flexShrink: 0 }}>{d.savedAt.slice(0, 16).replace('T', ' ')}</span>
+                  <span style={{ fontSize: 10, color: '#5B6673', flexShrink: 0 }}>{d.savedAt.slice(0, 16).replace('T', ' ')}</span>
                   <button
                     title="Delete from browser storage"
                     onClick={e => { e.stopPropagation(); deleteStoredDocument(d.id); setDocs(listStoredDocuments()) }}
@@ -110,7 +116,7 @@ export const Splash: React.FC = () => {
         {/* ── Footer ────────────────────────────────────────────────── */}
         <div style={{
           display: 'flex', alignItems: 'center', gap: 10, padding: '10px 28px',
-          borderTop: '1px solid #21262d', fontSize: 12, color: '#8b949e',
+          borderTop: '1px solid #1E232A', fontSize: 12, color: '#AEB6C0',
         }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 7, cursor: 'pointer' }}>
             <input
@@ -124,7 +130,7 @@ export const Splash: React.FC = () => {
           <span style={{ flex: 1 }} />
           <button
             onClick={closeSplash}
-            style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: 12, padding: '6px 10px' }}
+            style={{ background: 'transparent', border: 'none', color: '#AEB6C0', cursor: 'pointer', fontSize: 12, padding: '6px 10px' }}
           >Close ✕</button>
         </div>
       </div>

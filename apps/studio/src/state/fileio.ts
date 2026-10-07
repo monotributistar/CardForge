@@ -6,7 +6,7 @@
 
 import type { DocumentV2 } from '../types/cardforge'
 import { useDocumentStore, getActiveTab } from './DocumentStore'
-import { exportDocument } from '../studio/core/CoreClient'
+import { exportDocument, CoreUnreachableError } from '../studio/core/CoreClient'
 
 // ── File System Access API ambient types (not yet in lib.dom) ────────
 
@@ -170,7 +170,15 @@ export async function exportActiveTab(): Promise<void> {
     const name = (tab.doc.meta?.name ?? '').replace(/[\\/:*?"<>|]/g, '').trim() || 'card'
     downloadBlob(blob, `${name}_${exportTimestamp()}.3mf`)
   } catch (e) {
-    window.alert(`Export failed: ${e instanceof Error ? e.message : String(e)}`)
+    if (e instanceof CoreUnreachableError) {
+      window.alert(
+        'La exportación necesita el motor de compilación, que ahora está desconectado.\n\n' +
+        'Conectá el motor desde el botón “Motor” (arriba a la derecha) y volvé a intentar. ' +
+        'El diseño, la validación y los arreglos siguen funcionando sin conexión.',
+      )
+      return
+    }
+    window.alert(`No se pudo exportar: ${e instanceof Error ? e.message : String(e)}`)
   }
 }
 

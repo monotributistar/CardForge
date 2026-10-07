@@ -42,11 +42,11 @@ export const FeatureTree: React.FC = () => {
   const [addMenuOpen, setAddMenuOpen] = useState(false)
 
   if (!tab) {
-    return <div style={{ padding: 12, color: '#484f58', fontSize: 12 }}>No document open</div>
+    return <div style={{ padding: 12, color: '#5B6673', fontSize: 12 }}>No document open</div>
   }
   const doc = tab.doc
 
-  const materialColor = (id: string) => doc.materials.find(m => m.id === id)?.color ?? '#8b949e'
+  const materialColor = (id: string) => doc.materials.find(m => m.id === id)?.color ?? '#AEB6C0'
 
   const addFeature = (entry: typeof ADDABLE[number]) => {
     setAddMenuOpen(false)
@@ -113,30 +113,30 @@ export const FeatureTree: React.FC = () => {
     <div style={{ fontSize: 12, position: 'relative' }}>
       {/* Header with add menu */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px 4px' }}>
-        <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, color: '#8b949e' }}>Features</span>
+        <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.6, color: '#AEB6C0' }}>Features</span>
         <button
           onClick={() => setAddMenuOpen(o => !o)}
           title="Add feature to active face"
-          style={{ background: '#21262d', color: '#58a6ff', border: '1px solid #30363d', borderRadius: 4, width: 24, height: 24, cursor: 'pointer', fontSize: 14, lineHeight: '18px', padding: 0 }}
+          style={{ background: '#1E232A', color: '#E8622C', border: '1px solid #2A313A', borderRadius: 4, width: 24, height: 24, cursor: 'pointer', fontSize: 14, lineHeight: '18px', padding: 0 }}
         >+</button>
       </div>
       {addMenuOpen && (
         <div style={{
           position: 'absolute', right: 8, top: 30, zIndex: 20,
-          background: '#161b22', border: '1px solid #30363d', borderRadius: 6,
+          background: '#1A1E24', border: '1px solid #2A313A', borderRadius: 6,
           boxShadow: '0 4px 12px rgba(0,0,0,0.5)', padding: 4, minWidth: 140,
         }}>
           {ADDABLE.map(a => (
             <div
               key={a.label}
               onClick={() => addFeature(a)}
-              style={{ padding: '8px 10px', cursor: 'pointer', borderRadius: 4, display: 'flex', gap: 8, alignItems: 'center', color: '#c9d1d9', fontSize: 13 }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#21262d' }}
+              style={{ padding: '8px 10px', cursor: 'pointer', borderRadius: 4, display: 'flex', gap: 8, alignItems: 'center', color: '#E6E9ED', fontSize: 13 }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#1E232A' }}
               onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
             >
-              <span style={{ width: 16, textAlign: 'center', color: '#8b949e' }}>{TYPE_ICONS[a.type]}</span>
+              <span style={{ width: 16, textAlign: 'center', color: '#AEB6C0' }}>{TYPE_ICONS[a.type]}</span>
               {a.label}
-              <span style={{ marginLeft: 'auto', fontSize: 10, color: '#484f58' }}>{tab.activeFace}</span>
+              <span style={{ marginLeft: 'auto', fontSize: 10, color: '#5B6673' }}>{tab.activeFace}</span>
             </div>
           ))}
         </div>
@@ -150,14 +150,14 @@ export const FeatureTree: React.FC = () => {
           display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px', minHeight: 30,
           cursor: 'pointer',
           background: tab.objectSelected ? 'rgba(88,166,255,0.15)' : 'transparent',
-          borderLeft: tab.objectSelected ? '2px solid #58a6ff' : '2px solid transparent',
-          color: tab.objectSelected ? '#58a6ff' : '#c9d1d9',
+          borderLeft: tab.objectSelected ? '2px solid #E8622C' : '2px solid transparent',
+          color: tab.objectSelected ? '#E8622C' : '#E6E9ED',
           fontWeight: tab.objectSelected ? 600 : 400,
         }}
       >
         <span style={{ width: 14, textAlign: 'center', flexShrink: 0 }}>◼</span>
         <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Object</span>
-        <span style={{ fontSize: 10, color: '#484f58' }}>{doc.object.outline.type}</span>
+        <span style={{ fontSize: 10, color: '#5B6673' }}>{doc.object.outline.type}</span>
       </div>
 
       {/* Faces */}
@@ -170,13 +170,13 @@ export const FeatureTree: React.FC = () => {
               onClick={() => setActiveFace(face)}
               style={{
                 padding: '7px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, minHeight: 30,
-                color: isActive ? '#58a6ff' : '#8b949e', fontWeight: isActive ? 600 : 400,
+                color: isActive ? '#E8622C' : '#AEB6C0', fontWeight: isActive ? 600 : 400,
                 background: isActive ? 'rgba(88,166,255,0.06)' : 'transparent',
               }}
             >
               <span style={{ fontSize: 9 }}>{isActive ? '▼' : '▶'}</span>
               {face === 'front' ? 'Front' : 'Back'}
-              <span style={{ fontSize: 10, color: '#484f58' }}>({features.length})</span>
+              <span style={{ fontSize: 10, color: '#5B6673' }}>({features.length})</span>
             </div>
             {applicationOrder(features).slice().reverse().map((f, rowIdx) => {
               // Top row = applied last = wins overlaps (layer-panel order)
@@ -197,30 +197,30 @@ export const FeatureTree: React.FC = () => {
                     display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px 6px 14px', minHeight: 28,
                     cursor: 'pointer',
                     background: isSel ? 'rgba(88,166,255,0.15)' : 'transparent',
-                    borderLeft: isSel ? '2px solid #58a6ff' : '2px solid transparent',
-                    color: hidden ? '#484f58' : '#c9d1d9',
+                    borderLeft: isSel ? '2px solid #E8622C' : '2px solid transparent',
+                    color: hidden ? '#5B6673' : '#E6E9ED',
                   }}
                 >
-                  <span style={{ width: 12, textAlign: 'right', fontSize: 9, color: '#484f58', flexShrink: 0 }}>{step}</span>
-                  <span style={{ width: 14, textAlign: 'center', color: '#8b949e', flexShrink: 0 }}>{TYPE_ICONS[f.type] ?? '?'}</span>
+                  <span style={{ width: 12, textAlign: 'right', fontSize: 9, color: '#5B6673', flexShrink: 0 }}>{step}</span>
+                  <span style={{ width: 14, textAlign: 'center', color: '#AEB6C0', flexShrink: 0 }}>{TYPE_ICONS[f.type] ?? '?'}</span>
                   <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {f.name ?? f.id}
                   </span>
                   <span style={{
                     width: 8, height: 8, borderRadius: 2, flexShrink: 0,
-                    background: materialColor(f.material), border: '1px solid #30363d',
+                    background: materialColor(f.material), border: '1px solid #2A313A',
                   }} />
                   <button
                     title="Subir capa (se aplica después — gana solapamientos)"
                     disabled={rowIdx === 0}
                     onClick={e => { e.stopPropagation(); moveFeature(face, f.id, +1) }}
-                    style={{ background: 'transparent', border: 'none', cursor: rowIdx === 0 ? 'default' : 'pointer', fontSize: 9, padding: 0, color: rowIdx === 0 ? '#30363d' : '#8b949e', flexShrink: 0 }}
+                    style={{ background: 'transparent', border: 'none', cursor: rowIdx === 0 ? 'default' : 'pointer', fontSize: 9, padding: 0, color: rowIdx === 0 ? '#2A313A' : '#AEB6C0', flexShrink: 0 }}
                   >▲</button>
                   <button
                     title="Bajar capa (se aplica antes)"
                     disabled={rowIdx === features.length - 1}
                     onClick={e => { e.stopPropagation(); moveFeature(face, f.id, -1) }}
-                    style={{ background: 'transparent', border: 'none', cursor: rowIdx === features.length - 1 ? 'default' : 'pointer', fontSize: 9, padding: 0, color: rowIdx === features.length - 1 ? '#30363d' : '#8b949e', flexShrink: 0 }}
+                    style={{ background: 'transparent', border: 'none', cursor: rowIdx === features.length - 1 ? 'default' : 'pointer', fontSize: 9, padding: 0, color: rowIdx === features.length - 1 ? '#2A313A' : '#AEB6C0', flexShrink: 0 }}
                   >▼</button>
                   <button
                     title={hidden ? 'Show' : 'Hide'}
@@ -236,7 +236,7 @@ export const FeatureTree: React.FC = () => {
               )
             })}
             {features.length === 0 && (
-              <div style={{ padding: '2px 22px', color: '#484f58', fontSize: 11 }}>empty</div>
+              <div style={{ padding: '2px 22px', color: '#5B6673', fontSize: 11 }}>empty</div>
             )}
           </div>
         )
