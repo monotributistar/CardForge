@@ -173,9 +173,16 @@ def api_export(body: dict):
         errors = [i for i in issues if i.severity == Severity.ERROR]
         report = analyze(doc, scene, trace)
 
-        if (errors or report.has_errors) and not ignore_errors:
+        # Gate on the verdict, not on the error counts: a skipped feature
+        # raises no constraint and no manufacturing error, yet the model is
+        # missing it.
+        v = verdict(issues, report, trace)
+        if not v["ready"] and not ignore_errors:
             return _error(
-                409, "Document has blocking errors; pass ignoreErrors to override",
+                409, "Document is not ready to export: "
+                     + "; ".join(b["code"] for b in v["blockers"][:4])
+                     + ". Pass ignoreErrors to override",
+                verdict=v,
                 constraints=issues_json(errors),
                 manufacturing=report_json(report))
 

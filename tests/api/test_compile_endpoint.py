@@ -74,6 +74,32 @@ class TestExport:
             assert "manufacturing_report.json" in names
 
 
+    def test_skipped_feature_blocks_export(self):
+        """A missing SVG raises no constraint or manufacturing error — the
+        icon is simply absent. Export must refuse it all the same."""
+        doc = client.post("/api/migrate", json={"document": example_doc()}).json()["document"]
+        assert client.post("/api/export", json={"document": doc}).status_code == 200
+
+        doc["assets"] = {**doc.get("assets", {}),
+                         "ghost": "assets/logos/does-not-exist.svg"}
+        doc["faces"]["front"]["features"].append(
+            {"id": "ghost-logo", "type": "icon", "transform": {"x": 60, "y": 5},
+             "material": doc["materials"][-1]["id"],
+             "relief": {"mode": "emboss", "height": 0.4},
+             "svgAsset": "ghost", "width": 10})
+
+        r = client.post("/api/export", json={"document": doc})
+        assert r.status_code == 409
+        body = r.json()
+        assert body["verdict"]["ready"] is False
+        assert any(b["code"] == "feature-skipped" and b["featureId"] == "ghost-logo"
+                   for b in body["verdict"]["blockers"])
+        assert "feature-skipped" in body["error"]
+
+        forced = client.post("/api/export", json={"document": doc, "ignoreErrors": True})
+        assert forced.status_code == 200
+
+
 class TestMigrate:
     def test_migrate_v1(self):
         r = client.post("/api/migrate", json={"document": example_doc()})
