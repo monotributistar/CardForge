@@ -306,7 +306,7 @@ class TestExport:
         assert out["ok"] is True
         names = {Path(f["path"]).name for f in out["files"]}
         assert "test-card.3mf" in names
-        assert "manufacturing_report.json" in names
+        assert "manufacturing.json" in names
         assert any(n.endswith(".stl") for n in names)
         for f in out["files"]:
             assert Path(f["path"]).stat().st_size == f["bytes"]
@@ -332,6 +332,62 @@ class TestExport:
                    ignore_errors=True)
         assert out["ok"] is True
         assert out["exportedWithErrors"] is True
+
+
+    def test_traversal_id_stays_inside_out_dir(self, tmp_path):
+        """`meta.id` is a free string; it must never pick the directory."""
+        out_dir = tmp_path / "exports"
+        d = doc()
+        d["meta"]["id"] = "../../outside"
+        out = call("cardforge_export", document=d, out_dir=str(out_dir))
+
+        assert out["ok"] is True
+        root = out_dir.resolve()
+        assert Path(out["outDir"]).resolve().parent == root
+        for f in out["files"]:
+            assert root in Path(f["path"]).resolve().parents
+        assert {p.name for p in tmp_path.iterdir()} == {"exports"}
+
+    def test_a_skipped_feature_blocks_the_export(self, tmp_path):
+        """No constraint or manufacturing error fires for a missing SVG — the
+        icon just is not there. Export must still refuse it."""
+        d = doc()
+        d["assets"] = {"logo": "assets/logos/does-not-exist.svg"}
+        d["faces"]["front"]["features"].append(
+            {"id": "logo", "type": "icon", "transform": {"x": 50, "y": 10},
+             "material": "text", "relief": {"mode": "emboss", "height": 0.4},
+             "svgAsset": "logo", "width": 15})
+        out = call("cardforge_export", document=d, out_dir=str(tmp_path))
+
+        assert out["ok"] is False and out["stage"] == "blocked"
+        assert any(b["code"] == "feature-skipped"
+                   for b in out["verdict"]["blockers"])
+        assert not list(tmp_path.iterdir())
+
+        forced = call("cardforge_export", document=d, out_dir=str(tmp_path),
+                      ignore_errors=True)
+        assert forced["ok"] is True and forced["exportedWithErrors"] is True
+
+    def test_re_export_purges_stale_parts(self, tmp_path):
+        """A renamed material must not leave its old STL beside the new one —
+        the slicer would import both."""
+        first = call("cardforge_export", document=doc(), out_dir=str(tmp_path))
+        target = Path(first["outDir"])
+        assert (target / "stl" / "text_slot2.stl").is_file()
+
+        d = doc()
+        d["materials"][1]["id"] = "ink"
+        d["faces"]["front"]["features"][0]["material"] = "ink"
+        d["meta"]["name"] = "Renamed"
+        call("cardforge_export", document=d, out_dir=str(tmp_path))
+
+        stls = {p.name for p in (target / "stl").iterdir()}
+        assert "text_slot2.stl" not in stls
+        assert "ink_slot2.stl" in stls
+
+        call("cardforge_export", document=d, out_dir=str(tmp_path),
+             formats=["stl"])
+        assert not list(target.glob("*.3mf"))
 
 
 class TestMigrate:
